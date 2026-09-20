@@ -1,0 +1,50 @@
+import { describe, expect, it } from "vitest";
+import { effectiveConfidence } from "../effective-confidence.js";
+import { ZERO_CONFIDENCE, type Confidence } from "../confidence.js";
+import type { CapturedAt } from "../captured-at.js";
+import { fixtureMemory, fixtureTombstonedMemory, FIXTURE_EARLIER, FIXTURE_NOW } from "./fixtures.js";
+
+describe("effectiveConfidence — computed, query-facing, distinct from Memory.confidence", () => {
+  it("is ZERO for any TombstonedMemory, regardless of its recorded confidence", () => {
+    const dead = fixtureTombstonedMemory();
+    expect(dead.confidence).not.toBe(ZERO_CONFIDENCE); // the RECORDED field is untouched...
+    expect(effectiveConfidence(dead, FIXTURE_NOW)).toBe(ZERO_CONFIDENCE); // ...but the COMPUTED answer is always 0.
+  });
+
+  it("does not simply forward whatever `.confidence` happens to be on the object it was given — the tombstoned branch is keyed on `status`, not on the stored number", () => {
+    // A tombstoned record whose recorded confidence is deliberately HIGH —
+    // if this function ever regressed to reading `.confidence` generically
+    // instead of checking `status` first, this is the test that would catch it.
+    const highConfidenceButDead = fixtureTombstonedMemory({
+      confidence: 0.99 as Confidence,
+    });
+    expect(effectiveConfidence(highConfidenceButDead, FIXTURE_NOW)).toBe(ZERO_CONFIDENCE);
+  });
+
+  it("fails closed to ZERO for a live memory whose lastAffirmedAt is AFTER the given now (clock-inconsistency) — never a fabricated high confidence", () => {
+    const live = fixtureMemory<string>({ lastAffirmedAt: "2099-01-01T00:00:00.000Z" as CapturedAt });
+    expect(effectiveConfidence(live, FIXTURE_NOW)).toBe(ZERO_CONFIDENCE);
+  });
+
+  it("for a live, clock-consistent memory, returns the recorded confidence UNCHANGED — this milestone's disclosed, honest limitation (no decay engine exists yet; see effective-confidence.ts's own header)", () => {
+    const live = fixtureMemory<string>({ lastAffirmedAt: FIXTURE_EARLIER, confidence: 0.7 as Confidence });
+    expect(effectiveConfidence(live, FIXTURE_NOW)).toBe(live.confidence);
+  });
+
+  it("DISCLOSED LIMITATION, ASSERTED DIRECTLY: the live branch does NOT vary with elapsed time yet — this assertion is expected to start FAILING the moment M3's real decay() replaces this branch, which is the point", () => {
+    const live = fixtureMemory<string>({ lastAffirmedAt: FIXTURE_EARLIER, confidence: 0.7 as Confidence });
+    const soonAfter = effectiveConfidence(live, FIXTURE_EARLIER);
+    const monthsLater = effectiveConfidence(live, FIXTURE_NOW);
+    expect(soonAfter).toBe(monthsLater); // no decay applied — true today, false once M3 lands.
+  });
+
+  it("the distinction is structural, not just a naming convention: effectiveConfidence's parameter type accepts BOTH Memory and TombstonedMemory, while Memory.confidence is only ever the recorded field on the live half", () => {
+    const live = fixtureMemory<string>();
+    const dead = fixtureTombstonedMemory();
+    // Both are legal inputs to the same function — proving the function's
+    // whole job is to look PAST whichever `.confidence` field is present
+    // and decide the query-facing number some other way (status first).
+    expect(() => effectiveConfidence(live, FIXTURE_NOW)).not.toThrow();
+    expect(() => effectiveConfidence(dead, FIXTURE_NOW)).not.toThrow();
+  });
+});

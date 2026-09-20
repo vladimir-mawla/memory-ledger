@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DONE — memory-ledger</title>
+<style>
+  :root { --bg:#0d1117; --card:#161b22; --line:#30363d; --ink:#e6edf3; --mut:#8b949e;
+          --ok:#2ea043; --warn:#d29922; --bad:#f85149; --accent:#58a6ff; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font:15px/1.55 ui-sans-serif,-apple-system,Segoe UI,Roboto,sans-serif; }
+  .wrap { max-width:920px; margin:0 auto; padding:32px 24px 80px; }
+  h1 { font-size:26px; margin:0 0 4px; }
+  h2 { font-size:18px; margin:32px 0 12px; border-bottom:1px solid var(--line); padding-bottom:6px; }
+  .sub { color:var(--mut); margin:0 0 24px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px 18px; margin:12px 0; }
+  .locked { border-left:3px solid var(--warn); }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th,td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--mut); font-weight:600; }
+  code { background:#1f2630; padding:1px 6px; border-radius:5px; font-size:13px; }
+  .gate { display:flex; gap:10px; align-items:flex-start; padding:6px 0; }
+  .box { width:16px; height:16px; border:1.5px solid var(--mut); border-radius:4px; flex:0 0 auto; margin-top:2px; }
+  .done .box { background:var(--ok); border-color:var(--ok); }
+  .done .label { color:var(--mut); text-decoration:line-through; }
+  .pill { display:inline-block; font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid var(--line); color:var(--mut); }
+  .pill.ok{color:var(--ok);border-color:var(--ok);} .pill.wip{color:var(--warn);border-color:var(--warn);} .pill.todo{color:var(--mut);border-color:var(--mut);}
+  .note { color:var(--mut); font-size:13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>DONE — memory-ledger</h1>
+  <p class="sub">The single source of truth for <b>what "done" means</b> and <b>the implementation plan</b>.
+     This file is LOCKED — the driver model may not edit it without explicit user request.
+     Updated: 2026-09-20</p>
+
+  <!-- ───────────── THE LOCKED SPEC ───────────── -->
+  <h2>1 · The Locked Spec (what we are building)</h2>
+  <div class="card locked">
+    <p><b>Cognitive job:</b> Given a claim about the world (source, confidence, freshness, scope), record
+       it as an immutable, append-only belief; mechanically detect when a later claim, elapsed time, or a
+       source revocation should make the store trust it less or stop surfacing it as belief at all; and
+       when asked what it currently believes, answer with a closed, exhaustively-matched outcome that can
+       honestly say "I don't know any more, and here is the tombstone proving why" — never silently rank a
+       stale answer highest because it happens to read closer to the question. "Memory that knows it might
+       be wrong": the mechanic is a typed forgetting policy, not a metadata field bolted onto retrieval —
+       see <code>memory-plan.md</code> §2 for the full structural argument against plain RAG.</p>
+    <p><b>Inputs:</b> a typed claim (<code>subject</code>, <code>predicate</code>, plain-data
+       <code>value</code>, <code>Provenance</code>, <code>Scope</code>) — never raw, unstructured text
+       handed straight to the store. &nbsp;→&nbsp; <b>Outputs:</b> a <code>BeliefAnswer</code> (believed /
+       doubted / disputed / unknown, each carrying the fact that makes it that variant, never a bare
+       ranked list) and, whenever something stops being believed, a <code>Tombstone</code> naming exactly
+       why and, where applicable, exactly what replaced it.</p>
+    <p><b>Autonomy level:</b> Fully autonomous for recording a claim, detecting contradiction/decay/
+       revocation, and answering a query — none of that needs a human in the loop. What is deliberately
+       NOT autonomous: choosing which of two disagreeing, equally-tiered sources to believe. When
+       <code>contradict()</code> (M4) cannot decide mechanically (the <code>disputed</code> outcome, §5.1),
+       the system does not guess — it surfaces both candidates and lets the asker judge, which is itself
+       the correct autonomy level for a claim the store's own rules say it cannot resolve.</p>
+    <p><b>Failure tolerance:</b> Fail toward doubt, never toward false confidence. A clock-inconsistent
+       timestamp, an unresolved contradiction, or every known candidate being tombstoned must all push
+       toward <code>doubted</code>/<code>disputed</code>/<code>unknown</code>, never toward a fabricated
+       <code>believed</code>. There is deliberately no LLM anywhere in the contradiction or decay path —
+       <code>lib/contradiction/**</code> and <code>lib/decay/**</code> (M3/M4, unbuilt) are planned to be
+       grep-tested to contain zero LLM-client/network imports, so "you're just asking a model to guess
+       what changed" is falsifiable and false by construction. &nbsp;|&nbsp; <b>Trust boundary:</b> a
+       memory's own recorded <code>confidence</code> is never what a query reports — only
+       <code>effectiveConfidence</code>, computed fresh, is (see <code>lib/contracts/effective-confidence.ts</code>).</p>
+    <p class="note">Filled during Genesis step G0 (Cognitive Design), following the shape used in
+       decision-engine's and shadow-run's own <code>.genesis/DONE.html</code> (this project's
+       infrastructure siblings) — content is project-specific, structure only is borrowed.</p>
+  </div>
+
+  <!-- ───────────── DEFINITION OF DONE ───────────── -->
+  <h2>2 · Definition of Done (binary gates — checked by the VERIFIER, not the maker)</h2>
+  <div class="card">
+    <div class="gate"><span class="box"></span><span class="label">Dependency direction inward, zero cycles <span class="note">(modular-architecture gate)</span></span></div>
+    <div class="gate"><span class="box"></span><span class="label"><code>npm run typecheck</code> clean AND <code>npm test</code> green</span></div>
+    <div class="gate"><span class="box"></span><span class="label">One <code>verify</code> pass by a <b>separate</b> agent/model (L4)</span></div>
+    <div class="gate"><span class="box"></span><span class="label">No milestone's freeze boundary touched by a later milestone <span class="note">(freeze-boundary gate — the independent verifier's first job on every milestone)</span></span></div>
+    <div class="gate"><span class="box"></span><span class="label"><code>lib/contradiction/**</code> and <code>lib/decay/**</code> contain zero LLM-client, <code>fetch</code>, or <code>node:</code> network imports <span class="note">(no-story-generator gate, from M3/M4)</span></span></div>
+    <div class="gate"><span class="box"></span><span class="label">A live-query function's parameter type structurally refuses a <code>TombstonedMemory</code> — proven by <code>@ts-expect-error</code>, never a runtime <code>if</code> alone <span class="note">(compile-time-refusal gate, from M1/M5)</span></span></div>
+    <div class="gate"><span class="box"></span><span class="label">Every <code>ForgetReason</code> variant is proven, by a passing test, to actually tombstone something — not merely representable <span class="note">(forgetting-is-proven gate, from M5/M7)</span></span></div>
+    <div class="gate"><span class="box"></span><span class="label">A query over an all-tombstoned corpus returns <code>unknown</code>/<code>all-known-memories-tombstoned</code> — never silently falls back to the highest-confidence dead record <span class="note">(no-silent-fallback gate, from M5)</span></span></div>
+    <div class="gate"><span class="box"></span><span class="label">The fair bag-of-words/cosine baseline (§8) is run as a real, passing test against the exact scenario, not asserted in demo narration <span class="note">(fair-baseline gate, from M7)</span></span></div>
+    <div class="gate"><span class="box"></span><span class="label">The live demo URL runs the §8 address scenario end-to-end from input, driving the real engine <span class="note">(deliverable gate — the brief requires a live demo)</span></span></div>
+    <div class="gate"><span class="box"></span><span class="label">A clean clone plus install plus typecheck plus test passes with no credentials configured <span class="note">(clean-clone gate)</span></span></div>
+    <p class="note">A milestone is DONE only when every applicable box above is checked by the verifier,
+       and never by the building agent marking its own work. There is deliberately no LLM anywhere in the
+       contradiction/decay path, so any generic "LLM schema-validation" gate from a template does not
+       apply here and was dropped.</p>
+  </div>
+
+  <!-- ───────────── IMPLEMENTATION PLAN ───────────── -->
+  <h2>3 · Implementation Plan (the work, sliced into milestones)</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th>#</th><th>Milestone</th><th>Phase</th><th>Demo command (proves it works)</th><th>Loops</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td>M1</td><td>Contracts: Memory, ForgetReason, Tombstone, BeliefAnswer</td><td>BUILD</td><td><code>npm test -- contracts</code></td><td>L1, L4</td><td><span class="pill todo">todo</span></td></tr>
+        <tr><td>M2</td><td>Deploy a live skeleton to Vercel</td><td>DEPLOY</td><td><code>curl -sf $DEPLOY_URL/api/health</code></td><td>L1, L4</td><td><span class="pill todo">todo</span></td></tr>
+        <tr><td>M3</td><td>The decay engine</td><td>BUILD</td><td><code>npm test -- decay</code></td><td>L1, L4</td><td><span class="pill todo">todo</span></td></tr>
+        <tr><td>M4</td><td>The contradiction engine</td><td>BUILD</td><td><code>npm test -- contradiction</code></td><td>L1, L4</td><td><span class="pill todo">todo</span></td></tr>
+        <tr><td>M5</td><td>The forgetting engine (tombstoning)</td><td>BUILD</td><td><code>npm test -- store</code></td><td>L1, L4</td><td><span class="pill todo">todo</span></td></tr>
+        <tr><td>M6</td><td>Domain: the personal-assistant memory adapter</td><td>INTEGRATE</td><td><code>npm run demo:memory</code></td><td>L1, L4</td><td><span class="pill todo">todo</span></td></tr>
+        <tr><td>M7</td><td>The failure suite (the one deliberate-failure milestone)</td><td>VERIFY</td><td><code>npm test -- failures</code></td><td>L1, L4</td><td><span class="pill todo">todo</span></td></tr>
+        <tr><td>M8</td><td>The interactive demo</td><td>BUILD</td><td>deployed URL runs the §8 scenario end-to-end from input</td><td>L1, L4</td><td><span class="pill todo">todo</span></td></tr>
+        <tr><td>M9</td><td>Deliverables</td><td>RELEASE</td><td><code>git clone ... && npm ci && npm run typecheck && npm test</code></td><td>L1, L4</td><td><span class="pill todo">todo</span></td></tr>
+      </tbody>
+    </table>
+    <p class="note">Total token budget = 9 milestones × 150000. Update <span class="pill wip">wip</span> /
+       <span class="pill ok">done</span> as loops complete — a milestone only flips to <code>done</code>
+       after independent (L4) verification, never by the building agent marking its own work. M1 is BUILT
+       on branch <code>m1-contracts</code> (PR open against <code>main</code>) and stays <code>todo</code>
+       in this table until that independent verification lands — this table is mirrored in
+       <code>PLAN.md</code> for the agent to parse.</p>
+  </div>
+
+</div>
+</body>
+</html>

@@ -23,7 +23,7 @@ describe("decay(memory, now) — the freshness interpreter for a declared DecayP
       expect(JSON.parse(JSON.stringify(memory))).toEqual(before);
     });
 
-    it("at zero elapsed time, returns the recorded confidence exactly — the same value effectiveConfidence's own disclosed-limitation branch previously stood in for at zero elapsed decay", () => {
+    it("at zero elapsed time, returns the recorded confidence exactly — the same value effective-confidence.ts's own (permanently structural, see that file's header) live branch reports before any decay composition happens", () => {
       const memory = fixtureMemory({ confidence: 0.8 as Confidence });
       const result = decay(memory, FIXTURE_BELIEVED_AT);
       expect(result.confidence).toBe(0.8);
@@ -135,11 +135,60 @@ describe("decay(memory, now) — the freshness interpreter for a declared DecayP
   });
 
   describe("policy is interpreted as declared DATA, not special-cased per memory", () => {
-    it("two memories with identical fields but a differently-configured linear-to-floor policy decay differently — proving the policy, not a hardcoded curve, drives the result", () => {
+    it("two memories with identical fields but a differently-configured half-life policy decay differently — proving the policy, not a hardcoded curve, drives the result", () => {
       const slow = fixtureMemory({ decayPolicy: fixtureDecayingPolicy({ halfLifeMs: 10_000 as Milliseconds }) });
       const fast = fixtureMemory({ decayPolicy: fixtureDecayingPolicy() }); // halfLifeMs 1000
       const at = atOffsetMs(1000);
       expect(decay(fast, at).confidence).toBeLessThan(decay(slow, at).confidence);
+    });
+  });
+
+  describe("malformed policy fails closed — EXPLICITLY VALIDATED, not merely survived by accidental arithmetic", () => {
+    it("halfLifeMs: 0 at elapsed = 0 — the exact case this milestone's own build report named as its weakest point — is neither a crash nor a fabricated 'freshly believed', but ZERO_CONFIDENCE/'forgettable'", () => {
+      const memory = fixtureMemory({ decayPolicy: fixtureDecayingPolicy({ halfLifeMs: 0 as Milliseconds }) });
+      expect(() => decay(memory, FIXTURE_BELIEVED_AT)).not.toThrow();
+      expect(decay(memory, FIXTURE_BELIEVED_AT)).toEqual({ confidence: ZERO_CONFIDENCE, status: "forgettable" });
+    });
+
+    it("a negative halfLifeMs is rejected the same way, at any elapsed time", () => {
+      const memory = fixtureMemory({ decayPolicy: fixtureDecayingPolicy({ halfLifeMs: -1000 as Milliseconds }) });
+      expect(decay(memory, atOffsetMs(500))).toEqual({ confidence: ZERO_CONFIDENCE, status: "forgettable" });
+    });
+
+    it("a non-finite halfLifeMs (Infinity/NaN, reachable only via a defeating cast — exercised here deliberately) is rejected the same way", () => {
+      const infinite = fixtureMemory({ decayPolicy: fixtureDecayingPolicy({ halfLifeMs: Infinity as Milliseconds }) });
+      const notANumber = fixtureMemory({ decayPolicy: fixtureDecayingPolicy({ halfLifeMs: NaN as Milliseconds }) });
+      expect(decay(infinite, atOffsetMs(500))).toEqual({ confidence: ZERO_CONFIDENCE, status: "forgettable" });
+      expect(decay(notANumber, atOffsetMs(500))).toEqual({ confidence: ZERO_CONFIDENCE, status: "forgettable" });
+    });
+
+    it("forgetFloor > doubtedThreshold (an internally inconsistent policy) is rejected outright, never silently reinterpreted by field order", () => {
+      const memory = fixtureMemory({
+        decayPolicy: fixtureDecayingPolicy({ doubtedThreshold: 0.2 as Confidence, forgetFloor: 0.4 as Confidence }),
+      });
+      expect(decay(memory, atOffsetMs(500))).toEqual({ confidence: ZERO_CONFIDENCE, status: "forgettable" });
+    });
+
+    it("the malformed-policy verdict is stricter than clock-inconsistency's — ZERO_CONFIDENCE/'forgettable', not ZERO_CONFIDENCE/'doubted' — because a broken policy misconfigures every future call, not just this one", () => {
+      const memory = fixtureMemory({ decayPolicy: fixtureDecayingPolicy({ halfLifeMs: 0 as Milliseconds }) });
+      const result = decay(memory, FIXTURE_BELIEVED_AT);
+      expect(result.status).toBe("forgettable");
+      expect(result.status).not.toBe("doubted");
+    });
+
+    it("does NOT overtighten: a well-formed half-life policy with forgetFloor === doubtedThreshold (equal, not exceeding) is still valid", () => {
+      const memory = fixtureMemory({
+        decayPolicy: fixtureDecayingPolicy({ doubtedThreshold: 0.3 as Confidence, forgetFloor: 0.3 as Confidence }),
+      });
+      expect(() => decay(memory, atOffsetMs(500))).not.toThrow();
+      expect(decay(memory, atOffsetMs(0)).status).toBe("believed"); // at zero elapsed, confidence is still the recorded 0.8, well above 0.3
+    });
+
+    it("does NOT overtighten: the ordinary fixture policy used throughout this file is valid and produces normal, non-degenerate results", () => {
+      const memory = fixtureMemory();
+      const result = decay(memory, atOffsetMs(500));
+      expect(result.confidence).toBeGreaterThan(0);
+      expect(result.status).toBe("believed");
     });
   });
 });

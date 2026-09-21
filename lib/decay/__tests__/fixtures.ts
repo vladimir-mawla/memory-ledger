@@ -1,9 +1,12 @@
 import type { Memory } from "../../contracts/memory.js";
+import type { TombstonedMemory } from "../../contracts/tombstoned-memory.js";
+import type { Tombstone } from "../../contracts/tombstone.js";
 import type { Provenance } from "../../contracts/provenance.js";
 import type { CapturedAt, Milliseconds } from "../../contracts/captured-at.js";
 import type { Confidence } from "../../contracts/confidence.js";
 import type { DecayPolicy } from "../../contracts/decay-policy.js";
 import { memoryId } from "../../contracts/memory-id.js";
+import { tombstoneId } from "../../contracts/tombstone-id.js";
 import type { Json } from "../../contracts/json.js";
 
 /**
@@ -31,10 +34,10 @@ function fixtureProvenance(overrides: Partial<Provenance> = {}): Provenance {
   };
 }
 
-/** A `linear-to-floor` policy with round, exact-at-the-tick numbers: confidence halves every 1000ms, `doubtedThreshold` sits exactly one half-life out, `forgetFloor` exactly two half-lives out — see `decay.test.ts`'s threshold-flip tests for why these particular numbers were chosen (verified exact under IEEE754, not merely "close enough"). */
-export function fixtureDecayingPolicy(overrides: Partial<Extract<DecayPolicy, { kind: "linear-to-floor" }>> = {}): DecayPolicy {
+/** A `half-life` policy with round, exact-at-the-tick numbers: confidence halves every 1000ms, `doubtedThreshold` sits exactly one half-life out, `forgetFloor` exactly two half-lives out — see `decay.test.ts`'s threshold-flip tests for why these particular numbers were chosen (verified exact under IEEE754, not merely "close enough"). */
+export function fixtureDecayingPolicy(overrides: Partial<Extract<DecayPolicy, { kind: "half-life" }>> = {}): DecayPolicy {
   return {
-    kind: "linear-to-floor",
+    kind: "half-life",
     halfLifeMs: 1000 as Milliseconds,
     doubtedThreshold: 0.4 as Confidence,
     forgetFloor: 0.2 as Confidence,
@@ -61,4 +64,25 @@ export function fixtureMemory<TValue = string>(overrides: Partial<Memory<TValue 
 
 export function atOffsetMs(ms: number): CapturedAt {
   return new Date(Date.parse(FIXTURE_BELIEVED_AT) + ms).toISOString() as CapturedAt;
+}
+
+function fixtureTombstone(overrides: Partial<Tombstone> = {}): Tombstone {
+  return {
+    id: tombstoneId("tomb-1"),
+    memoryId: memoryId("mem-1"),
+    reason: "age-exceeded",
+    forgottenAt: FIXTURE_BELIEVED_AT,
+    ...overrides,
+  } as Tombstone;
+}
+
+/** Same live fields `fixtureMemory` produces (including its decaying default policy — see this file's own header for why that default matters), plus the `Tombstone` that killed it. Used by `query-confidence.test.ts` to prove `queryConfidence` never reads a tombstoned record's confidence at all, decaying or not. */
+export function fixtureTombstonedMemory(overrides: Partial<TombstonedMemory<string>> = {}): TombstonedMemory<string> {
+  const { status: _status, ...liveFields } = fixtureMemory<string>();
+  return {
+    ...liveFields,
+    status: "tombstoned",
+    tombstone: fixtureTombstone(),
+    ...overrides,
+  };
 }

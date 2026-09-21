@@ -1,21 +1,20 @@
-# ADR 0002 — The decay engine: curve choice, the `forgettable`/status split, `Provenance.tier`, and the `effectiveConfidence` question
+# ADR 0002 — The decay engine: curve choice, the `forgettable`/status split, `Provenance.tier`, the `effectiveConfidence` question, and policy validation
 
-- **Date:** 2026-09-22
-- **Status:** proposed (the `effectiveConfidence` wiring below is a recommendation, not yet applied — see
-  "Decision 5" and this build's own report for why)
+- **Date:** 2026-09-22 (amended same day, after orchestrator ruling)
+- **Status:** accepted
 - **Phase / milestone:** M3 (BUILD) — `lib/decay/`
 
 ## Context
 
 M1 (`.genesis/decisions/0001-contracts.md`, Decision 4) fixed `DecayPolicy`'s SHAPE as closed, two-member
-data (`"linear-to-floor"` / `"never-decays"`) and explicitly left the CURVE unbuilt: "`halfLifeMs` names the
-curve's parameter, not the curve itself — M3's `lib/decay/**` ... is the interpreter that actually computes
-a confidence value from `(policy, memory, now)`." This ADR records that interpreter's design, the four
-design questions this milestone's own brief asked to be settled with reasoning rather than left unasked, and
-the one question this build did NOT resolve unilaterally — whether `lib/contracts/effective-confidence.ts`
-(frozen) should be reopened to call the new `decay()`.
+data and explicitly left the CURVE unbuilt: "`halfLifeMs` names the curve's parameter, not the curve itself —
+`lib/decay/**` (M3) is the interpreter that actually computes a confidence value from `(policy, memory,
+now)`." This ADR records that interpreter's design, the four design questions this milestone's own brief
+asked to be settled with reasoning rather than left unasked, the resolution of the `effectiveConfidence`
+question this build escalated rather than decided unilaterally, the rename that resolution's own sibling
+finding triggered, and an explicit-validation fix for a self-named weak point.
 
-## Decision 1 — The curve: exponential half-life, applied honestly to a field named for it, with a disclosed naming mismatch inherited from M1
+## Decision 1 — The curve: exponential half-life — and the `"half-life"` rename
 
 **The one available parameter is `halfLifeMs`.** "Half-life" is unambiguously an exponential-decay term (the
 time for a quantity to fall to half its value) — there is no principled way to read a field with that name
@@ -28,20 +27,38 @@ confidence(t) = recordedConfidence * 0.5 ^ (elapsedMs / halfLifeMs)
 clamped into `[0, recordedConfidence]` and re-validated through `parseConfidence` before being handed back as
 a `Confidence`.
 
-**Disclosed inconsistency, not silently fixed:** `DecayPolicy`'s own discriminant literal is
-`"linear-to-floor"`, not `"exponential-half-life"` or similar — a real naming mismatch between the frozen
-type's tag and the only curve its own field name supports. This build does not have authority to rename a
-frozen `lib/contracts` literal, and inventing a *different*, non-exponential curve just to make "linear"
-true would misread `halfLifeMs` outright (a truly linear-to-floor curve needs a slope or an end time, not a
-half-life). **This is named directly in this build's own report as a plan/contracts inconsistency worth a
-future revision, not treated as license to invent a contradictory formula.**
+**This build's first pass found a real naming mismatch and reported it rather than silently working around
+it:** `DecayPolicy`'s decaying variant was originally named `"linear-to-floor"` by M1, but the only curve its
+own field name (`halfLifeMs`) can honestly express is exponential, not linear. **The orchestrator's ruling:
+fix the name, not just document the mismatch** — "a shipped type carrying a permanently wrong name is worse
+than a one-line reopening, and M5/M6/M8 will all read that discriminant." `lib/contracts` was reopened,
+narrowly, for exactly this rename (plus the `effectiveConfidence` documentation fix, Decision 5):
 
-**Alternative considered and rejected: a genuinely linear ramp, reinterpreting `halfLifeMs` as "time to reach
-zero."** Rejected because it silently redefines what a reviewer reading `decay-policy.ts`'s own field name
-would expect ("half-life" would then not even approximately describe the field's behavior), and because nothing
-in `memory-plan.md` or the M1 ADR argues for a linear curve over an exponential one — the tag name
-(`"linear-to-floor"`) looks like it was chosen for readability ("decays toward a floor") rather than as a
-precise mathematical commitment, and the field it actually carries settles the real behavior.
+- `lib/contracts/decay-policy.ts` — discriminant literal `"linear-to-floor"` → `"half-life"`, plus a header
+  paragraph recording the rename and pointing here.
+- `lib/contracts/__tests__/decay-policy.test.ts` — every literal/string reference updated to match.
+- `lib/decay/decay.ts`, `lib/decay/__tests__/fixtures.ts`, `lib/decay/__tests__/decay.test.ts` — every
+  reference to the old literal updated; the "naming mismatch" discussion in `decay.ts`'s own header is
+  replaced with a note that the rename happened and why.
+
+**Scope check, per the orchestrator's own "if the rename touches more than the discriminant string and its
+references, stop and report" instruction:** it did not. The rename touches exactly the `kind` literal
+(`"linear-to-floor"` → `"half-life"`) everywhere it appears, plus prose describing it — no field was added,
+removed, or retyped, no other discriminant changed, and no consumer outside `lib/contracts`/`lib/decay`
+exists yet to be touched (M4/M5/M6 are unbuilt or, for M4, off-limits). `git diff main -- lib/contracts`
+(reported in this build's own report) shows the full, narrow scope directly.
+
+**Alternative considered and rejected (unchanged from this ADR's first pass): a genuinely linear ramp,
+reinterpreting `halfLifeMs` as "time to reach zero."** Rejected because it silently redefines what a reviewer
+reading `decay-policy.ts`'s own field name would expect, and nothing in `memory-plan.md` or the M1 ADR argues
+for a linear curve over an exponential one.
+
+**Note on `memory-plan.md` §5.2's own prose** ("a declared, typed function (e.g., linear-to-floor over a
+configured half-life)"): that planning document is left as-is — it records what was written before any code
+existed, and rewriting a foundational plan document to retroactively match an implementation detail (a type
+literal's exact spelling) would misrepresent when the decision was actually made. This ADR, and
+`decay-policy.ts`'s own header, are the record of the rename; a reader of `memory-plan.md` alone should treat
+its `"linear-to-floor"` phrase as historical framing, not the current discriminant.
 
 ## Decision 2 — At and beyond the final threshold: confidence keeps evaluating the same closed-form curve; it does not freeze, and it structurally cannot go negative
 
@@ -50,20 +67,15 @@ precise mathematical commitment, and the field it actually carries settles the r
 **Chosen:** there is no special-cased floor-and-stop. The same `recordedConfidence * 0.5^(elapsed/halfLife)`
 expression keeps being evaluated for arbitrarily large `elapsed` — which, being a strictly decreasing
 exponential bounded below by 0, asymptotically approaches (and, once floating-point precision is exhausted,
-numerically reaches) zero on its own, never overshoots past it, and never comes back up. A `Math.max(0, ...)`
-clamp exists only as a defensive backstop against a pathological input (see Decision 1's clamp), not as the
-mechanism that keeps the curve honest — the curve is already well-behaved by construction. `status`
-separately reports `"forgettable"` once `forgetFloor` is crossed and stays `"forgettable"` for every later
-`now`, proven directly in `__tests__/decay.test.ts`'s "long after the forget floor" test (confidence keeps
-falling, monotonically, never re-crosses upward).
+numerically reaches) zero on its own, never overshoots past it, and never comes back up. `status` separately
+reports `"forgettable"` once `forgetFloor` is crossed and stays `"forgettable"` for every later `now`, proven
+directly in `__tests__/decay.test.ts`'s "long after the forget floor" test (confidence keeps falling,
+monotonically, never re-crosses upward).
 
-**Alternative considered and rejected: hard-clamp confidence to `forgetFloor` itself once crossed** (so a
-"forgotten" memory's reported confidence never reads as lower than the floor that condemned it). Rejected:
+**Alternative considered and rejected: hard-clamp confidence to `forgetFloor` itself once crossed.** Rejected:
 this would make `confidence` stop being an honest measurement the moment it matters most — two memories both
 long past their floor, one barely past it and one decayed for years, would report identically, discarding
-real information a caller (or a future audit) might want. The continuous, unclamped-below number costs
-nothing and loses nothing; `status: "forgettable"` alone is what a caller should act on, not a magic
-plateau value.
+real information a caller (or a future audit) might want.
 
 ## Decision 3 — `forgettable` is a DERIVED property computed by `decay()`, never a value `Memory.status` carries
 
@@ -76,173 +88,164 @@ frozen three-member union (`"believed" | "doubted" | "disputed"`, `memory.ts`). 
 load-bearing, not just one:
 
 1. **Consistency with M1's own precedent.** `memory-plan.md` §3 already drew exactly this line for
-   `confidence` vs. `effectiveConfidence`: "What decay ... change[s] is not that field; they change what a
-   *query* is willing to report." `Memory.confidence` is recorded and immutable; `effectiveConfidence` is
-   computed and query-facing. `forgettable` is the same kind of fact — a statement about what a query
-   *currently* believes, not a fact recorded permanently onto the memory at creation time — and keeping it
-   computed, not stored, is the same design decision applied to a second field instead of a new one invented
-   for this milestone.
+   `confidence` vs. `effectiveConfidence`. `forgettable` is the same kind of fact — a statement about what a
+   query *currently* believes, not a fact recorded permanently onto the memory at creation time.
 2. **`Memory.status` cannot honestly gain a fourth member without reopening a file this milestone has no
-   authority over.** M1's own ADR (Decision 2) narrowed `Memory.status` to exactly three members *specifically
-   so* `"tombstoned"` could be a structurally distinct type (`TombstonedMemory`) rather than a fourth status
-   value, making the live-query compile-time refusal possible. Adding `"forgettable"` as a fifth/fourth member
-   now would reopen that exact frozen decision for a reason M1 never anticipated, and — more concretely —
-   `"forgettable"` is not something a `Memory` genuinely IS at any fixed point; it is a fact ABOUT a `Memory`
-   *at a given `now`*, which a stored field on an immutable record cannot represent without becoming stale the
-   instant time moves on. A derived, computed value is the only honest representation.
+   authority over (for this).** M1's own ADR (Decision 2) narrowed `Memory.status` to exactly three members
+   *specifically so* `"tombstoned"` could be a structurally distinct type, making the live-query compile-time
+   refusal possible. `"forgettable"` is not something a `Memory` genuinely IS at any fixed point; it is a
+   fact ABOUT a `Memory` *at a given `now`*, which a stored field on an immutable record cannot represent
+   without becoming stale the instant time moves on.
 
 **Consequence, stated plainly:** crossing `forgetFloor` does not tombstone anything. `decay()` has no side
-effect (Decision on purity below) and does not construct a `Tombstone` — that is M5's `lib/store/**` (unbuilt),
-which is expected to read `decay(memory, now).status === "forgettable"` and, if so, call
-`forget(memory, "age-exceeded", now)`. `lib/decay/**` only computes the fact; a later, still-unbuilt milestone
-acts on it.
+effect and does not construct a `Tombstone` — that is M5's `lib/store/**` (unbuilt), which is expected to
+read `decay(memory, now).status === "forgettable"` and, if so, call `forget(memory, "age-exceeded", now)`.
 
 ## Decision 4 — `Provenance.tier` does NOT change the decay curve — asked and deliberately left unanswered here
 
 **The plan's own question:** "does decay interact with `Provenance.tier`? ... If you add that, justify it;
 if you don't, say why not."
 
-**Chosen: no interaction, by design, not by oversight.** Three reasons:
+**Chosen: no interaction, by design, not by oversight.**
 
-1. **No concrete case to justify it.** `memory-plan.md` §5.1 works `ConfidenceTier` hard for the
-   `contradict()` split (M4's job, `superseded` vs. `disputed`), but never states or implies that a
-   `direct-avowal` and a `derived-inference` memory should decay at *different rates* purely from age — the
-   plan's own freshness-decay prose (§5, cause 2) never mentions `tier` at all. Inventing a tier-scaled decay
-   rate now, with no worked example anywhere in the plan to calibrate it against, is exactly the
-   "speculative flexibility nobody asked for" this account's own standing note warns cost a sibling five
+1. **No concrete case to justify it.** `memory-plan.md`'s freshness-decay prose (§5, cause 2) never mentions
+   `tier` at all, and inventing a tier-scaled decay rate now, with no worked example to calibrate against, is
+   the "speculative flexibility nobody asked for" this account's own standing note warns cost a sibling five
    bypasses.
-2. **The mechanism that DOES exist for this is `DecayPolicy` itself, already per-memory.** `decayPolicy`
-   lives on `MemoryCore`, i.e. on every individual `Memory`, not globally — a caller who DOES want a
-   `derived-inference` memory to decay faster than a `direct-avowal` one already has the tool to express
-   that today, by constructing that memory with a shorter `halfLifeMs`. `Provenance.tier` reaching INTO the
-   decay curve as a second, implicit adjustment would be a hidden multiplier competing with a
-   `decayPolicy` a caller set explicitly — two knobs controlling the same one number, with no stated rule for
-   how they'd combine, is a worse design than the one already available.
-3. **Ownership.** Even if a tier-scaled rate were wanted, deciding *how much* faster `derived-inference`
-   should decay is exactly the kind of judgment call M1's own Decision 1 already refused to make for
-   `SourceKind → ConfidenceTier`, for the identical reason: no stated authority beyond one worked example.
-   That decision, if ever made, belongs to whichever milestone has a real case in front of it (M6's domain
-   adapter is the most likely candidate, choosing `decayPolicy` per predicate/source when it constructs real
-   memories) — not to this one, guessing.
+2. **The mechanism that DOES exist for this is `DecayPolicy` itself, already per-memory.** A caller who wants
+   a `derived-inference` memory to decay faster already has the tool: construct it with a shorter
+   `halfLifeMs`. A hidden `tier`-based multiplier would be a second, competing, unstated-precedence knob over
+   the same one number.
+3. **Ownership.** Deciding *how much* faster a lower tier should decay is a judgment call belonging to
+   whichever milestone has a real case in front of it (M6's domain adapter, most likely) — not to this one,
+   guessing.
 
-## Decision 5 — `effectiveConfidence`'s live branch: RECOMMENDATION ONLY, not applied by this build
+## Decision 5 — `effectiveConfidence`: RULED, not merely recommended — `lib/contracts` stays exactly as written; the composed answer lives in `lib/decay`
 
-`lib/contracts/effective-confidence.ts` (frozen) currently returns `record.confidence` unchanged on its live,
-clock-consistent branch, explicitly disclosed there and in `.genesis/decisions/0001-contracts.md` (Decision 6)
-as "the one HONEST, DISCLOSED LIMITATION of this milestone... M3 replaces ONLY this final `return` with a real
-call to `decay(record, now).confidence`; the tombstoned-zero and clock-inconsistency branches above are
-already correct ... and should not need to change." `lib/contracts/__tests__/effective-confidence.test.ts`
-carries a test asserting the live branch does NOT vary with elapsed time, written, by its own name, to start
-failing "the moment M3's real decay() lands."
+**This build's first pass recommended, but explicitly did not apply, wiring `decay(record, now).confidence`
+into `effective-confidence.ts`'s final `return`** — exactly what M1's own ADR (Decision 6) and that file's
+header both instructed. Escalated rather than decided unilaterally, per this milestone's own brief.
 
-**This build's recommendation, with reasoning, per this milestone's own instruction not to decide this
-unilaterally:**
+**The orchestrator's ruling: that instruction was WRONG, not merely undecided.** `lib/decay` imports
+`lib/contracts` — five imports, confirmed by the architecture test (`Memory`, `TombstonedMemory`, `Json`,
+`Confidence`/`ZERO_CONFIDENCE`, `CapturedAt`). If `lib/contracts/effective-confidence.ts` also imported
+`decay` FROM `lib/decay`, the two directories would import each other — a real circular dependency, not a
+hypothetical one — and it would invert this project's own layering, where `lib/contracts` is the frozen BASE
+every later milestone (`lib/decay`, `lib/contradiction`, `lib/store`) is built on top of, never the reverse.
+M1's ADR could not have seen this: it was written before `lib/decay` existed to import anything from
+`lib/contracts` at all.
 
-- **The structural change is exactly as small and as already-specified as M1 left it.** Replace
-  `effective-confidence.ts`'s final `return record.confidence;` with
-  `return decay(record, now).confidence;`, plus one new import (`decay` from `../decay/decay.js`). No other
-  line changes. `decay`'s own clock-inconsistency branch already returns `ZERO_CONFIDENCE`, so
-  `effectiveConfidence`'s own separate clock check (its second branch) becomes provably redundant with
-  `decay`'s internal one the moment this wiring lands — harmless to leave in place (belt-and-suspenders,
-  and it is `effectiveConfidence`'s own established, correct behavior per the M1 ADR, not something this
-  milestone should touch either way), but worth naming so a future reader does not mistake redundancy for
-  disagreement between the two checks.
-- **`lib/decay` importing FROM `lib/contracts` is already normal and already tested** — this milestone's
-  architecture test (`lib/decay/__tests__/architecture.test.ts`) allows exactly `lib/decay/` and
-  `lib/contracts/` as `decay()`'s own dependency roots. The proposed change runs the dependency the other
-  way (`lib/contracts` importing from `lib/decay`), which is new, but not architecturally unusual: M1's own
-  header already anticipated it by name ("M3's `lib/decay/**`... is the interpreter... M3 replaces ONLY this
-  final `return`").
-- **Why this build still did not just make the edit:** the milestone brief for this build is explicit that
-  "the cleanest structure" question — whether decay belongs behind a function `lib/contracts` calls, whether
-  `effectiveConfidence` should MOVE to `lib/decay`, or whether contracts must be reopened at all — is "the
-  orchestrator's [call]," even when the file's own header and the prior ADR already telegraph the answer.
-  Treating a strongly-telegraphed answer as self-authorizing is exactly the unilateral-decision failure mode
-  the brief names outright ("Do not decide this unilaterally"). This build stops short of editing
-  `lib/contracts/effective-confidence.ts`, leaves `git diff main -- lib/contracts` empty, and reports this
-  recommendation instead.
-- **A second alternative structure considered, and why "replace the final return" is still preferred over
-  it:** moving `effectiveConfidence` itself into `lib/decay/` (so the computed-confidence function lives next
-  to the engine it depends on, and `lib/contracts` never imports "downward" from a later milestone at all).
-  Rejected as the RECOMMENDED option, not merely as inferior: `effectiveConfidence`'s own signature and
-  tombstoned/clock branches are `Memory`/`TombstonedMemory`-shaped type-system work that M1 already built,
-  tested, and froze correctly per its own ADR (Decision 6: "already correct under §3/§7's own rules and
-  should not need to change") — relocating the whole function would touch code that isn't broken, move a
-  name every future milestone (M4's contradiction engine, M6's domain adapter) will import from
-  `lib/contracts`'s public barrel today, and would be a strictly bigger frozen-boundary change than the
-  one-line swap M1's own header already asked for. The one-line replacement is both the smaller diff and the
-  one the prior milestone's authors already committed to in writing.
-- **A finding surfaced by tracing this through, reported here because it affects whether the pinning test
-  will actually do its job:** `lib/contracts/__tests__/fixtures.ts`'s `fixtureMemory` defaults
-  `decayPolicy` to `{ kind: "never-decays" }`. The pinning test
-  (`effective-confidence.test.ts`, "DISCLOSED LIMITATION, ASSERTED DIRECTLY") builds its memory via
-  `fixtureMemory(...)` without overriding `decayPolicy`. Under THIS milestone's own `decay()`, a
-  `"never-decays"` memory's confidence is, correctly, unchanged by elapsed time (Decision 3's "never-decays"
-  branch: `{ confidence: memory.confidence, status: "believed" }`, unconditionally). **That means even after
-  the recommended one-line wiring lands, this specific pinning test will keep PASSING, not start failing as
-  its own name promises** — not because decay is still missing, but because the fixture it happens to use
-  genuinely does not decay. The test's own premise assumed the fixture would exercise a real curve; it
-  doesn't. **This build's recommendation, if/when contracts reopens for the wiring change:** the pinning
-  test's decayPolicy-sensitive assertion needs a second case (or an override) using a `"linear-to-floor"`
-  policy with nonzero elapsed time, alongside keeping the existing `"never-decays"` case as a legitimate,
-  separate assertion ("a never-decays memory's effective confidence is unchanged even after wiring — correct
-  behavior, not a regression"). Deleting the existing test would erase a real, still-true fact; simply
-  leaving it as the only test would make the "moment M3 lands" claim in its own name false. This is flagged
-  here rather than fixed here, since fixing it means editing a frozen file this build is not authorizing
-  itself to edit.
+**The resolution is architectural, not a wiring change:**
+
+- **`effectiveConfidence` (`lib/contracts/effective-confidence.ts`) stays EXACTLY as it was — zero executable
+  lines changed.** It was never a stub: it correctly and completely answers everything decidable AT ITS OWN
+  LAYER (tombstoned → zero, clock-inconsistent → zero, otherwise the recorded value). Only its HEADER COMMENT
+  changed, replacing the now-impossible promise ("M3 replaces ONLY this final `return`...") with the true
+  architectural reason it will not, and pointing by name at the function that does compose the real answer.
+  `git diff -- lib/contracts/effective-confidence.ts` (reported in this build's own report) shows this
+  directly: every changed line is inside the `/** ... */` header; the function body is byte-identical.
+- **The composed, query-facing answer is `queryConfidence(record, now)`, new in
+  `lib/decay/query-confidence.ts`.** It is the one place both `Memory`/`TombstonedMemory` (from
+  `lib/contracts`) and the real `decay` interpreter (right here) are visible at once: tombstoned → zero
+  (structural, mirroring `effectiveConfidence`'s own check), otherwise `decay(record, now).confidence` —
+  no duplicated clock check, since `decay` already fails closed on clock-inconsistency internally.
+  `__tests__/query-confidence.test.ts` proves it agrees with `effectiveConfidence` at every boundary they
+  share (tombstoned, zero elapsed time) and diverges the moment real elapsed time matters on a decaying
+  policy — the exact split this ADR argues for, proven directly rather than only asserted in prose.
+- **The pinning-test finding is now correctly framed as PERMANENT, not temporary.** This build's first pass
+  found that `lib/contracts/__tests__/fixtures.ts`'s `fixtureMemory` defaults `decayPolicy` to
+  `"never-decays"`, so the existing pinning test (`effective-confidence.test.ts`) would keep PASSING even
+  after a wiring change, contrary to its own "expected to start FAILING" comment. Since the wiring is now
+  never happening at that layer, the finding's fix is simpler than first proposed: **not** "add a
+  decaying-policy case to this frozen test" (which would require constructing a `decay`-aware scenario inside
+  `lib/contracts`, itself layering-inverted), but **correct the test's own description to state what it
+  actually, permanently pins** — done, comment-only, in `effective-confidence.test.ts`'s two affected `it(...)`
+  titles and one inline comment; the assertions themselves (`expect(...).toBe(...)`) are untouched, since the
+  behavior they check was already correct and remains correct. The decaying-policy case this finding always
+  needed lives instead in `lib/decay/__tests__/query-confidence.test.ts`, on the function that actually
+  composes decay — `"AGREES with effectiveConfidence ... DIVERGES once real time has passed ..."`.
+- **Alternative considered and rejected again: moving `effectiveConfidence` itself into `lib/decay/`.**
+  Still rejected, for the same reason as this ADR's first pass: it would touch correct, already-tested code
+  for no structural gain, and would move a name every future milestone imports from `lib/contracts`'s public
+  barrel today. `queryConfidence` as a NEW, separate function at the layer that needs it is the smaller,
+  correctly-directed change.
 
 ## Decision 6 — Purity, proven directly
 
 `decay()` takes `(memory, now)` and nothing else — no `Date.now()`, no `systemNow()` (captured-at.ts), no
 module-level mutable state. `__tests__/decay.test.ts`'s "purity" block proves three repeat calls on the same
-inputs deep-equal each other, and that the input `memory` object is untouched (compared via
-`JSON.parse(JSON.stringify(...))` before/after). The architecture test does not itself check for `Date.now`
-literally (that is a different concern than the LLM/network/fetch grep it runs), so purity is proven by the
-dedicated behavioral test, not the architecture one — recorded here so a reviewer knows which test carries
-which claim.
+inputs deep-equal each other, and that the input `memory` object is untouched.
+
+## Decision 7 — Malformed-policy handling: EXPLICIT validation, fail closed — not accidental arithmetic
+
+This build's own report named its weakest point: `decay()` never validated a `DecayPolicy`'s internal sanity
+(`halfLifeMs <= 0`, non-finite, or `forgetFloor > doubtedThreshold`). The arithmetic happened to survive these
+cases (a `0/0` division yields `NaN`, which `parseConfidence` rejects, falling back to `ZERO_CONFIDENCE`; the
+`Math.min`/`Math.max` clamp prevents a negative `halfLifeMs` from producing a rebound above the recorded
+confidence) — true, but untested, and therefore an accident of the arithmetic, not a guarantee.
+
+**Ruling: prefer explicit validation over relying on arithmetic to keep defending itself.** `validateHalfLifePolicy`
+(`decay.ts`) now checks, BEFORE any curve arithmetic runs: `halfLifeMs` is finite; `halfLifeMs` is strictly
+positive; `forgetFloor` does not exceed `doubtedThreshold`. A policy that fails any check makes `decay` return
+`{ confidence: ZERO_CONFIDENCE, status: "forgettable" }` — **deliberately the strictest verdict this file has,
+stricter than the clock-inconsistency branch's `"doubted"`.** The two branches are NOT collapsed into one,
+because they mean different things: a clock-inconsistent `now` is a one-time bad reading about a single call
+(the memory's own configuration may be perfectly fine); a malformed policy is a defect in the memory's OWN
+CONFIGURATION that will misbehave on every future call as well, so it earns the worst honest answer rather
+than something a later, well-formed `now` could ever recover from.
+
+`__tests__/decay.test.ts`'s "malformed policy" block tests every case named in this build's own weakest-point
+finding directly: `halfLifeMs: 0` at `elapsed = 0` (the exact case named), a negative `halfLifeMs`, a
+non-finite `halfLifeMs` (`Infinity`/`NaN`, reachable only via a brand-defeating cast — exercised deliberately
+inside `__tests__/`, which `brand-casts.test.ts` exempts), and `forgetFloor > doubtedThreshold`. A
+"does NOT overtighten" case (`forgetFloor === doubtedThreshold`, equal, not exceeding) is included alongside,
+proving the validation is exact, not merely conservative in a way that would reject valid configurations too.
+
+The pre-existing arithmetic defenses (the clamp in `decayedConfidence`, the `parseConfidence`-reject fallback)
+are kept as belt-and-suspenders, with their comments updated to say so plainly — they are no longer the
+primary defence, and the file's own header states this distinction rather than leaving a reader to assume
+the clamp alone was ever the intended guarantee.
+
+**Alternative considered and rejected: throw an exception for an invalid policy instead of returning a
+sentinel result.** Rejected: every other pure function in this codebase's `lib/contracts`/`lib/decay`
+(`ageOf`, `parseConfidence`, `parseCapturedAt`, `decay`'s own clock-inconsistency branch) fails closed by
+RETURNING an explicit "this didn't work" result, never by throwing — keeping `decay` total (never throws) lets
+callers (like `queryConfidence`) compose it unconditionally, without a `try`/`catch` at every call site.
+Introducing the one throwing pure function in this family, for this one edge case, would be an inconsistent
+special case with no stated benefit over the sentinel-result pattern already established everywhere else
+here.
 
 ## Consequences
 
-- Positive: `decay()` is a small, total, closed-form function with an exact, tested threshold boundary —
-  the sibling-project precedent this milestone was warned to avoid repeating (an EMA-shaped trust counter
-  with no clean threshold test) does not apply here.
+- Positive: `decay()` is a small, total, closed-form function with an exact, tested threshold boundary, an
+  honestly-named policy variant, and explicit (not accidental) defence against a malformed policy.
 - Positive: `forgettable` staying derived keeps `Memory.status` untouched and the M1 tombstone-refusal
-  property intact — this milestone adds a new computed vocabulary without reopening the frozen type it
-  would otherwise have been tempted to extend.
-- Negative / cost: the `"linear-to-floor"` / `halfLifeMs` naming mismatch (Decision 1) is now baked into two
-  files across two milestones (decay-policy.ts's tag, decay.ts's interpretation) rather than fixed once —
-  cheap to leave named as a finding, expensive to silently paper over with a formula the field's own name
-  doesn't support.
-- Negative / cost: `effectiveConfidence`'s live branch is NOT wired to real decay by this build — M3's own
-  demo (`npm test -- decay`) proves the engine works in isolation, but `npm test -- contracts` (or a caller
-  reading `BeliefQuery` results, once M5 exists) still sees M1's disclosed placeholder until the orchestrator
-  authorizes the one-line change recorded in Decision 5.
-- Forward note for whoever authorizes Decision 5's wiring: also update the pinning test per the finding
-  recorded there — the existing assertion alone will not fail even after the wiring lands, because its
-  fixture's default policy is `"never-decays"`.
-- Forward note for M4/M5/M6: `lib/decay`'s only allowed dependency (per its own architecture test) is
-  `lib/contracts`. `lib/contradiction/**` (M4) is untouched and unimported here, per this milestone's own
-  scope boundary — if M4 or M5 ever needs decay's OUTPUT (e.g. the store deciding whether to call
-  `forget(..., "age-exceeded", ...)`), it should import `decay` from `lib/decay` the same way this file
-  imports from `lib/contracts`, not reinvent the threshold logic.
+  property intact.
+- Positive: the `effectiveConfidence`/`queryConfidence` split keeps `lib/contracts` acyclic and correctly
+  layered — a property this build's first pass would have quietly broken had the original recommendation
+  been applied without the orchestrator's check.
+- Negative / cost: `lib/contracts` was reopened twice in this milestone (the rename, and the
+  `effectiveConfidence` header) — both narrow, both doc/literal-only or comment-only respectively, both
+  reported with an explicit `git diff` rather than asserted clean by name alone.
+- Forward note for M4/M5/M6: the real, current-belief-reporting function to call is `queryConfidence`
+  (`lib/decay/query-confidence.ts`), not `effectiveConfidence` (`lib/contracts`) — the latter is now
+  documented, permanently, as structural-only. M5's `BeliefQuery` should import `queryConfidence`.
+- Forward note for whoever builds M5: `decay(memory, now).status === "forgettable"` is the signal to call
+  `forget(memory, "age-exceeded", now)` — `lib/decay` never does this itself.
 
 ## Alternatives rejected (summary, cross-referenced above)
 
-- A genuinely linear decay curve, reinterpreting `halfLifeMs` as "time to zero" (Decision 1) — contradicts
-  the field's own name with no textual support for doing so.
-- Hard-clamping reported confidence to `forgetFloor` once crossed (Decision 2) — discards real information a
-  caller might want past the floor, for no stated benefit over a monotonic, unclamped-below curve.
-- `forgettable` as a fourth/fifth member of `Memory.status` (Decision 3) — would reopen a frozen M1 decision
-  for a reason M1 never anticipated, and cannot honestly represent a `now`-relative fact on an immutable,
-  point-in-time record.
-- A `Provenance.tier`-scaled decay rate (Decision 4) — no concrete case anywhere in the plan, and a
-  competing, unstated-precedence second knob over a rate `decayPolicy` already controls explicitly per
-  memory.
-- Unilaterally wiring `decay()` into frozen `effective-confidence.ts` inside this same build (Decision 5) —
-  the exact "decide this unilaterally" failure mode this milestone's own brief warns against, even with a
-  strongly telegraphed answer already on record from M1.
-- Moving `effectiveConfidence` itself into `lib/decay/` (Decision 5) — a bigger frozen-boundary change than
-  the one-line swap M1's own header already specified, touching correct, already-tested code for no
-  structural gain.
+- A genuinely linear decay curve, reinterpreting `halfLifeMs` as "time to zero" (Decision 1).
+- Hard-clamping reported confidence to `forgetFloor` once crossed (Decision 2).
+- `forgettable` as a fourth/fifth member of `Memory.status` (Decision 3).
+- A `Provenance.tier`-scaled decay rate (Decision 4).
+- Leaving the `effectiveConfidence` question as a standing recommendation rather than a ruling, or applying
+  the original recommendation (wiring `decay` directly into `effective-confidence.ts`) without checking for
+  the circular import it would create (Decision 5) — the orchestrator's own check caught this before it
+  landed.
+- Moving `effectiveConfidence` itself into `lib/decay/` (Decision 5) — still rejected on the same grounds as
+  this ADR's first pass.
+- Throwing on a malformed policy instead of returning a fail-closed sentinel (Decision 7) — inconsistent with
+  every other pure function in this codebase's own family.
 
 <!-- Copy this file to NNNN-<slug>.md for each irreversible decision. -->

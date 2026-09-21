@@ -2,4 +2,6 @@ export { type ValueComparator, type ComparisonInapplicableReason, type ValueComp
 
 export { type NotComparableReason, type ContradictionCheck, assertNeverContradictionCheck } from "./contradiction-check.js";
 
+export { type TierSplit, resolveTierSplit } from "./tier-split.js";
+
 export { contradict } from "./contradict.js";

@@ -172,14 +172,26 @@ describe("app/milestones.ts agrees with .genesis/DONE.html", () => {
     expect(fromModule).toEqual(completedInDoneHtml());
   });
 
-  it("as of M2: neither M1 nor M2 is claimed done in either place (both await independent verification)", () => {
+  it("M2 is not claimed done in either place — it cannot be, until a real deployment answers its demo command", () => {
     // A concrete regression case, not just the general invariant above:
     // this is the exact drift the M2 milestone brief warns against — a
-    // building agent marking its own work done. Both should read "not
-    // done" right now, in BOTH sources, on this branch.
-    const fromModule = MILESTONES.filter((m) => m.id === 1 || m.id === 2).map((m) => m.status);
-    expect(fromModule).toEqual(["in-progress", "in-progress"]);
-    expect(completedInDoneHtml()).not.toContain(1);
+    // building agent marking its own work done.
+    //
+    // WHY THIS TEST CHANGED SHAPE: it originally asserted that NEITHER M1
+    // nor M2 was done, which was true when M2's branch was cut. M1 has
+    // since passed independent verification and merged (PR #2), so that
+    // premise went stale and the test failed on merging `main` — the guard
+    // working exactly as intended, catching a point-in-time assertion that
+    // had become false.
+    //
+    // It is now scoped to M2 alone, and to the property that is genuinely
+    // invariant for this milestone rather than to a snapshot of a moment:
+    // M2's demo command is `curl -sf $DEPLOY_URL/api/health` against a
+    // REAL deployment, so no amount of finished code can satisfy it. This
+    // assertion is expected to start failing the moment that deployment
+    // exists and M2 is legitimately marked done — which is the point.
+    const m2 = MILESTONES.find((m) => m.id === 2);
+    expect(m2?.status).not.toBe("done");
     expect(completedInDoneHtml()).not.toContain(2);
   });
 });

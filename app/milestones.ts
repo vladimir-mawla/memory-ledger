@@ -41,7 +41,7 @@ export interface Milestone {
 }
 
 export const MILESTONES: readonly Milestone[] = [
-  { id: 1, title: "Contracts: Memory, ForgetReason, Tombstone, BeliefAnswer", status: "in-progress" },
+  { id: 1, title: "Contracts: Memory, ForgetReason, Tombstone, BeliefAnswer", status: "done" },
   { id: 2, title: "Deploy a live skeleton to Vercel", status: "in-progress" },
   { id: 3, title: "The decay engine", status: "planned" },
   { id: 4, title: "The contradiction engine", status: "planned" },

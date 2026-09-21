@@ -1,39 +1,37 @@
 import { MILESTONES, currentMilestone } from "./milestones";
+import { DemoAssistant } from "../components/DemoAssistant";
 
 /**
- * Root page — still infrastructure only at M2, not the interactive demo
- * (that is M8's job, see .genesis/PLAN.md). This exists so the deployed
- * skeleton says, plainly, exactly how far along the project is instead of
- * a static "placeholder" sentence that would go stale the moment any
- * milestone's status changed.
+ * Root page. Two things share it, the same split shadow-run's own
+ * app/page.tsx settled on for its M8: the milestone-status prose that has
+ * lived here since M2 (kept — app/milestones.ts is still the one place a
+ * reader should trust for "how far along is this"), and, below it, the
+ * actual interactive demo this project is built to show
+ * (`memory-plan.md` §8, `.genesis/PLAN.md`'s M8 row).
  *
- * Progress is read from app/milestones.ts, never hardcoded into this
- * prose — see that file's comment for why (a hardcoded milestone number
- * on a sibling project's public page went stale for two milestones).
- * `doneCount` below is COMPUTED from that module at render time, so this
- * file never needs a second edit purely because a milestone's status
- * changed. What still needs saying in prose, because the count alone
- * doesn't say it: ONE milestone (M1, contracts) has BUILT code, and even
- * that is not yet independently verified — nothing on this page may imply
- * a decay, contradiction, or forgetting engine exists, because none of
- * lib/decay, lib/contradiction, or lib/store exist yet, regardless of how
- * many milestones this module ever marks done.
+ * THIS COMMENT USED TO SAY nothing on this page may imply a decay,
+ * contradiction, or forgetting engine exists. That was true through M2 and
+ * is FALSE now: M3/M4/M5/M6 are all merged, and `<DemoAssistant />` below
+ * calls `recordFact()`/`query()` for real, client-side, on every click —
+ * leaving the old sentence in place after it stopped being true would be
+ * exactly the comment-contradicts-code mistake this project's own
+ * discipline exists to catch. `doneCount` is still computed from
+ * `app/milestones.ts` at render time rather than hardcoded, for the same
+ * "never let a public page's prose go stale" reason M2's version of this
+ * comment gave — and M8 itself is not marked `done` here, or in
+ * `.genesis/DONE.html`, by this build: that flip is the orchestrator's
+ * call after independent verification, not this milestone's own to make.
  */
 export default function Home() {
   const current = currentMilestone();
   const doneCount = MILESTONES.filter((m) => m.status === "done").length;
 
   return (
-    <main style={{ maxWidth: 640, margin: "0 auto", padding: "2rem 1rem" }}>
+    <main style={{ maxWidth: 720, margin: "0 auto", padding: "2rem 1rem" }}>
       <h1>memory-ledger</h1>
       <p>
         Memory that knows it might be wrong: a typed, append-only store of beliefs with source,
         confidence, freshness, scope, and an explicit, provable forgetting policy.
-      </p>
-      <p>
-        This is a deploy skeleton. No decay, contradiction, or forgetting engine exists yet —
-        only the typed contracts (M1, built but not yet independently verified) and this app
-        shell (M2).
       </p>
       <p>
         <strong>
@@ -58,6 +56,17 @@ export default function Home() {
         <a href="/api/health">/api/health</a> reports the deployed commit SHA and a live check of
         the M1 contracts&rsquo; <code>effectiveConfidence</code> behavior.
       </p>
+
+      <h2>See it live</h2>
+      <p>
+        Tell the assistant your shipping address. Months later, tell it you moved — phrased
+        completely differently. Ask a third time, in your original words. Every button below calls
+        the real engine (<code>recordFact()</code>, <code>query()</code>, and — inside the two
+        panels below — <code>effectiveConfidence()</code>, <code>queryConfidence()</code>, and the
+        fair baseline&rsquo;s own <code>rankBySimilarity()</code>) client-side, with no network
+        round-trip. Open your browser&rsquo;s Network tab and click through it: nothing fires.
+      </p>
+      <DemoAssistant />
     </main>
   );
 }

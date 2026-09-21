@@ -56,20 +56,23 @@ export type NotComparableReason = ComparisonInapplicableReason | "different-subj
  *   - `"no-conflict"` — values agree under the comparator; neither memory's
  *     status/liveness changes. `memory-plan.md` §5: "values agree
  *     (exact-equal, or within a declared numeric tolerance...)."
- *   - `"superseded"` — values disagree, and `newer.confidence` is at or
- *     above `older.confidence` (§5.1's plain numeric comparison on
- *     RECORDED confidence — see contradict.ts's header for why this
- *     milestone reads `Memory.confidence` directly rather than inventing a
- *     `Provenance.tier` → number mapping M1's own ADR left unresolved).
- *     `older` is the losing memory a caller should `forget(older,
- *     "contradicted", now)` with `supersededBy: newer.id` (M5, unbuilt);
- *     `newer` is the winner. Naming both, by reference, satisfies this
- *     milestone's own success criterion ("naming both ids" — `Memory.id`
- *     is on both).
- *   - `"disputed"` — values disagree, and `newer.confidence` is strictly
- *     LOWER than `older.confidence`: `memory-plan.md` §5.1's explicit
- *     non-negotiable — "a fresher-but-lower-confidence value must not
- *     auto-win." `candidates` is a fixed 2-tuple (`[older, newer]`, always
+ *   - `"superseded"` — values disagree, and `resolveTierSplit`
+ *     (tier-split.ts) resolves `(older.source.tier, newer.source.tier)`
+ *     to `"superseded"` — §5.1's split, decided on RECORDED TIER, never on
+ *     `Memory.confidence` (see tier-split.ts's own header for the
+ *     complete four-case rule, and `.genesis/decisions/0003-contradiction.md`
+ *     Decision 6 for why this milestone's first pass compared confidence
+ *     instead, and why that was wrong). `older` is the losing memory a
+ *     caller should `forget(older, "contradicted", now)` with
+ *     `supersededBy: newer.id` (M5, unbuilt); `newer` is the winner.
+ *     Naming both, by reference, satisfies this milestone's own success
+ *     criterion ("naming both ids" — `Memory.id` is on both).
+ *   - `"disputed"` — values disagree, and `resolveTierSplit` resolves to
+ *     `"disputed"`: `memory-plan.md` §5.1's explicit non-negotiable — "a
+ *     fresher-but-lower-confidence value must not auto-win" — read
+ *     correctly as a TIER statement (a `derived-inference` arriving after
+ *     a `direct-avowal` does not overturn it), not a confidence-number
+ *     statement. `candidates` is a fixed 2-tuple (`[older, newer]`, always
  *     in THAT order — deterministic, not "whichever the caller happened to
  *     name first"), mirroring `BeliefAnswer.disputed`'s own tuple shape
  *     exactly (a caller merging M4's `disputed` into a `BeliefAnswer`

@@ -22,7 +22,7 @@ describe("contradict(older, newer) — the four-outcome ContradictionCheck", () 
     });
   });
 
-  describe("§5.1's worked contrast, part 1 — superseded", () => {
+  describe("§5.1's worked contrast, part 1 — superseded (same tier, both direct-avowal)", () => {
     it("two same-tier human avowals with disagreeing values resolve to superseded, naming both ids", () => {
       // "My shipping address is 42 Elm Street" ... months later ... "I moved — my new address is 118 Birch Avenue."
       const older = fixtureMemory({
@@ -34,7 +34,7 @@ describe("contradict(older, newer) — the four-outcome ContradictionCheck", () 
       const newer = fixtureMemory({
         value: "118 Birch Avenue, Seattle",
         source: humanProvenance(),
-        confidence: 0.9 as Memory<string>["confidence"], // same tier → recorded confidence not lower → mechanically superseded.
+        confidence: 0.9 as Memory<string>["confidence"],
         believedAt: FIXTURE_LATER,
       });
       const check = contradict(older, newer);
@@ -45,15 +45,26 @@ describe("contradict(older, newer) — the four-outcome ContradictionCheck", () 
       }
     });
 
-    it("superseded also fires when the newer recorded confidence is strictly HIGHER, not just equal", () => {
-      const older = fixtureMemory({ value: "A", confidence: 0.7 as Memory<string>["confidence"], believedAt: FIXTURE_BELIEVED_AT });
-      const newer = fixtureMemory({ value: "B", confidence: 0.95 as Memory<string>["confidence"], believedAt: FIXTURE_LATER });
-      expect(contradict(older, newer).outcome).toBe("superseded");
+    it("PROOF (the weakest point flagged in this milestone's own build report, now closed): two direct-avowal memories with WILDLY DIVERGENT recorded confidence (0.9 vs. 0.1) still resolve to superseded — the split is decided on tier, never on Memory.confidence", () => {
+      const older = fixtureMemory({
+        value: "A",
+        source: humanProvenance(),
+        confidence: 0.9 as Memory<string>["confidence"], // deliberately the HIGHER confidence, on the LOSING (older) side.
+        believedAt: FIXTURE_BELIEVED_AT,
+      });
+      const newer = fixtureMemory({
+        value: "B",
+        source: humanProvenance(),
+        confidence: 0.1 as Memory<string>["confidence"], // deliberately the LOWER confidence, on the WINNING (newer) side.
+        believedAt: FIXTURE_LATER,
+      });
+      const check = contradict(older, newer);
+      expect(check.outcome).toBe("superseded"); // a confidence-number comparison would have said "disputed" here — that was this milestone's first-pass bug.
     });
   });
 
-  describe("§5.1's worked contrast, part 2 — disputed", () => {
-    it("two same-tier derived (OCR) inferences with disagreeing values, newer's recorded confidence lower, resolve to disputed — never an automatic winner", () => {
+  describe("§5.1's worked contrast, part 2 — disputed (same tier, both derived-inference)", () => {
+    it("two same-tier derived (OCR) inferences with disagreeing values resolve to disputed — never an automatic winner", () => {
       const older = fixtureMemory({
         value: "42 Elm Street, Portland",
         source: derivedProvenance({ sourceId: "ocr-scanner:v2" }),
@@ -73,11 +84,54 @@ describe("contradict(older, newer) — the four-outcome ContradictionCheck", () 
       }
     });
 
-    it("a fresher-but-lower-confidence value never auto-wins, proven the other direction too: high-confidence older beats a barely-fresher, much-lower-confidence newer", () => {
-      const older = fixtureMemory({ value: "A", confidence: 0.95 as Memory<string>["confidence"], believedAt: FIXTURE_BELIEVED_AT });
-      const newer = fixtureMemory({ value: "B", confidence: 0.1 as Memory<string>["confidence"], believedAt: FIXTURE_LATER });
-      const check = contradict(older, newer);
-      expect(check.outcome).toBe("disputed");
+    it("PROOF: same-tier derived-inference stays disputed even when the NEWER scan has the HIGHER recorded confidence — confidence is irrelevant to this branch too, not just the losing direction", () => {
+      const older = fixtureMemory({
+        value: "A",
+        source: derivedProvenance(),
+        confidence: 0.3 as Memory<string>["confidence"],
+        believedAt: FIXTURE_BELIEVED_AT,
+      });
+      const newer = fixtureMemory({
+        value: "B",
+        source: derivedProvenance(),
+        confidence: 0.95 as Memory<string>["confidence"], // much HIGHER than older, and still disputed.
+        believedAt: FIXTURE_LATER,
+      });
+      expect(contradict(older, newer).outcome).toBe("disputed");
+    });
+  });
+
+  describe("§5.1's split, the other two cases — cross-tier disagreements", () => {
+    it("a direct-avowal newer OUTRANKING a derived-inference older resolves to superseded, regardless of confidence — a person's own statement beats a mere inference about them", () => {
+      const older = fixtureMemory({
+        value: "A",
+        source: derivedProvenance(),
+        confidence: 0.95 as Memory<string>["confidence"], // deliberately HIGH confidence on the losing side.
+        believedAt: FIXTURE_BELIEVED_AT,
+      });
+      const newer = fixtureMemory({
+        value: "B",
+        source: humanProvenance(),
+        confidence: 0.1 as Memory<string>["confidence"], // deliberately LOW confidence on the winning side.
+        believedAt: FIXTURE_LATER,
+      });
+      expect(contradict(older, newer).outcome).toBe("superseded");
+    });
+
+    it("a derived-inference newer, OUTRANKED by a direct-avowal older, resolves to disputed regardless of confidence — memory-plan.md §5.1's 'a fresher-but-lower-confidence value must not auto-win,' read as a tier statement: an inference arriving after a direct avowal does not overturn it", () => {
+      const older = fixtureMemory({
+        value: "A",
+        source: humanProvenance(),
+        confidence: 0.1 as Memory<string>["confidence"], // deliberately LOW confidence on the (still-not-overturned) older side.
+        believedAt: FIXTURE_BELIEVED_AT,
+      });
+      const newer = fixtureMemory({
+        value: "B",
+        source: derivedProvenance(),
+        confidence: 0.99 as Memory<string>["confidence"], // deliberately very HIGH confidence, and still does not win.
+        believedAt: FIXTURE_LATER,
+      });
+      expect(contradict(older, newer).outcome).toBe("disputed");
     });
   });
 
@@ -219,7 +273,7 @@ describe("contradict(older, newer) — the four-outcome ContradictionCheck", () 
       expect(contradict(older, newer, { op: "gte" }).outcome).toBe("no-conflict");
     });
 
-    it("gte: a newer value that went backward is a real disagreement, resolved by the same confidence-tier split as any other", () => {
+    it("gte: a newer value that went backward is a real disagreement, resolved by the same tier split as any other", () => {
       const older = fixtureMemory<number>({ value: 150, confidence: 0.9 as Memory<number>["confidence"], believedAt: FIXTURE_BELIEVED_AT });
       const newer = fixtureMemory<number>({ value: 100, confidence: 0.9 as Memory<number>["confidence"], believedAt: FIXTURE_LATER });
       expect(contradict(older, newer, { op: "gte" }).outcome).toBe("superseded");

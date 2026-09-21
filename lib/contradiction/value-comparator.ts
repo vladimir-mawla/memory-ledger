@@ -50,7 +50,7 @@ import type { Json } from "../contracts/json.js";
  *     `lte` is the mirror: `newer <= older` agrees. A violation (the
  *     monotonic invariant broke — the odometer went backward) is exactly
  *     the disagreement case a real contradiction should register, and
- *     falls through to the same confidence-tier `superseded`/`disputed`
+ *     falls through to the same tier `superseded`/`disputed`
  *     split as any other disagreement (contradict.ts) — it is not a
  *     special "invalid data" outcome of its own, because the DATA is
  *     perfectly well-typed; it is the CLAIM that conflicts.
@@ -116,7 +116,7 @@ export type ComparisonInapplicableReason = "value-type-mismatch" | "comparator-i
  * discipline `memory-plan.md` §7 names for `BeliefAnswer`/`ContradictionCheck`,
  * applied one layer down: "the values differ" and "this comparator cannot
  * judge these values at all" are different facts a caller (`contradict.ts`)
- * must be able to tell apart, the first proceeding to the confidence-tier
+ * must be able to tell apart, the first proceeding to the tier
  * split (§5.1), the second failing closed to `not-comparable` outright.
  */
 export type ValueComparisonResult =

@@ -868,7 +868,7 @@ describe("lib/contradiction/** never reaches an LLM, the network, or a Node buil
     });
 
     it("does not false-positive on ordinary relative imports already used throughout this milestone", () => {
-      const specifiers = ["./value-comparator.js", "../contracts/index.js", "./contradiction-check.js", "./contradict.js"];
+      const specifiers = ["./value-comparator.js", "../contracts/index.js", "./contradiction-check.js", "./tier-split.js", "./contradict.js"];
       for (const specifier of specifiers) {
         expect(resolvesInsideAllowedRoots(FROM_CONTRADICT, specifier)).toBe(true);
       }

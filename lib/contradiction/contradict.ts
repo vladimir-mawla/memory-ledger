@@ -3,6 +3,7 @@ import type { Memory } from "../contracts/memory.js";
 import { scopeIsSupersetOf } from "../contracts/scope.js";
 import { compareValues, DEFAULT_VALUE_COMPARATOR, type ValueComparator } from "./value-comparator.js";
 import type { ContradictionCheck, NotComparableReason } from "./contradiction-check.js";
+import { resolveTierSplit } from "./tier-split.js";
 
 /**
  * `contradict(older, newer)` — `memory-plan.md` §5's contradiction engine,
@@ -108,30 +109,32 @@ import type { ContradictionCheck, NotComparableReason } from "./contradiction-ch
  * outcome `memory-plan.md` §5 says this project must never produce.
  *
  * ─────────────────────────────────────────────────────────────────────────
- * WHY THIS FUNCTION COMPARES `Memory.confidence`, NOT `Provenance.tier`,
- * DIRECTLY (closing M1's own ADR 0001 forward note)
+ * WHY THIS FUNCTION COMPARES `source.tier`, NOT `Memory.confidence` —
+ * CORRECTED, closing M1's own ADR 0001 forward note the RIGHT way
  * ─────────────────────────────────────────────────────────────────────────
  * `.genesis/decisions/0001-contracts.md`, Decision 1, left
- * `Provenance.tier`'s mapping to a numeric confidence explicitly
- * unresolved: "Whoever needs it first should decide it with a real case in
- * hand." M4 is that caller. `memory-plan.md` §5.1 itself says the
- * mechanism is "a PLAIN NUMERIC COMPARISON" — and `ConfidenceTier`
- * (`"direct-avowal" | "derived-inference"`) has no numeric ordering of its
- * own to compare; only `Memory.confidence` (the recorded, immutable
- * `Confidence` field, `[0,1]`) does. This function therefore compares
- * `newer.confidence >= older.confidence` DIRECTLY — the tier's role, per
- * §5.1's own text, is to explain WHY that recorded number is trustworthy
- * and stable (fixed at creation by source kind and directness), not to be
- * read a second time by this function. It is the CALLER constructing a
- * `Memory` (a future M6 domain adapter, or a test fixture) who is
- * responsible for assigning `confidence` consistently with `source.tier`
- * — exactly the responsibility M1's ADR already placed on "whoever
- * constructs a `Provenance` with a real case in front of them." Both halves
- * of the worked contrast (§5.1) are proven directly in
- * `__tests__/contradict.test.ts` using this exact mechanism: two
- * `direct-avowal` memories at equal recorded confidence → `superseded`;
- * two `derived-inference` memories where the newer one's recorded
- * confidence happens to be lower → `disputed`.
+ * `Provenance.tier`'s mapping explicitly unresolved: "Whoever needs it
+ * first should decide it with a real case in hand." M4 is that caller.
+ * THIS MILESTONE'S FIRST PASS COMPARED `Memory.confidence` INSTEAD, ON THE
+ * REASONING THAT `ConfidenceTier` (a two-member union) "has no numeric
+ * ordering of its own." That reasoning was wrong, caught in review: a
+ * two-member union has an obvious total order, and `PLAN.md`'s own M4
+ * success criteria state the rule directly in terms of the two tier NAMES
+ * — "two same-tier `human` avowals... resolve to `superseded`... two
+ * same-tier `derived` inferences... resolve to `disputed`" — never in
+ * terms of a numeric confidence value. The tell was in the milestone's own
+ * proof obligation: two `direct-avowal` memories with wildly different
+ * RECORDED confidence (`0.9` and `0.1`) must still resolve to `superseded`
+ * (a person restating a fact supersedes their own earlier statement,
+ * regardless of how confidently either statement happened to be recorded)
+ * — and a confidence-number comparison gets that case wrong. This function
+ * now calls `resolveTierSplit(older.source.tier, newer.source.tier)`
+ * (`tier-split.ts`) DIRECTLY. `Memory.confidence` plays NO role in this
+ * decision at all — see that file's own header for the complete four-case
+ * rule and why the two same-tier cases are asymmetric on purpose (the
+ * plan's own asymmetry, not an arbitrary choice). Both halves of the
+ * worked contrast (§5.1), AND the wildly-divergent-confidence proof case,
+ * are proven directly in `__tests__/contradict.test.ts`.
  *
  * ─────────────────────────────────────────────────────────────────────────
  * A FINDING AGAINST `memory-plan.md` §5.1 ITSELF, NOT SILENTLY WORKED
@@ -140,28 +143,32 @@ import type { ContradictionCheck, NotComparableReason } from "./contradiction-ch
  * ─────────────────────────────────────────────────────────────────────────
  * §5.1's `disputed` clause reads: "`newer.confidence` is lower than
  * `older`'s **and** `older` is still inside its own freshness window."
- * The second conjunct requires evaluating a `DecayPolicy` against `now` —
- * exactly `lib/decay/**` (M3), which this milestone is explicitly
- * forbidden to import, stub, or wait for, and `contradict`'s own signature
- * (`memory-plan.md`'s own outcome line: "`contradict(older, newer)`") never
- * names a `now` parameter to compute it with. This function does NOT
- * evaluate "freshness window" at all — it treats that conjunct as a
- * PRECONDITION owned by `contradict`'s eventual caller (M5's `lib/store/**`,
- * which DOES have `now` and DOES have `lib/decay/**`), not as something
- * `contradict` recomputes internally. Concretely: a store is expected to
- * call `contradict` only for `older` memories that are still live
- * (undecayed past `forgetFloor`) — a memory already decayed past that floor
- * would already have been `forget(..., "age-exceeded", now)`'d by M3/M5's
- * own machinery before ever reaching `contradict` at all, so "older is
- * still inside its freshness window" is, in practice, equivalent to "older
- * is still a live `Memory<TValue>`" — which IS structurally guaranteed by
- * this function's own parameter type (a `TombstonedMemory` cannot be
- * passed in). This is disclosed here, precisely, as a genuine simplification
- * this milestone makes because the alternative — inventing a `now`
- * parameter and a decay call `contradict(older, newer)`'s own stated
- * signature never asks for, reaching into M3's frozen-elsewhere territory
- * — would be worse: exactly the "inventing an interface M3 may contradict"
- * this milestone's own brief warns against.
+ * The FIRST conjunct is superseded by the tier-based correction above (see
+ * `tier-split.ts`'s header for why the plan's own worked examples read as
+ * a tier rule, not a confidence-number rule). The SECOND conjunct requires
+ * evaluating a `DecayPolicy` against `now` — exactly `lib/decay/**` (M3),
+ * which this milestone is explicitly forbidden to import, stub, or wait
+ * for, and `contradict`'s own signature (`memory-plan.md`'s own outcome
+ * line: "`contradict(older, newer)`") never names a `now` parameter to
+ * compute it with. **The freshness half of §5.1's condition is
+ * DELIBERATELY UNIMPLEMENTED AT THIS LAYER — not overlooked, not
+ * forgotten, a stated scope boundary.** This function treats that conjunct
+ * as a PRECONDITION owned by `contradict`'s eventual caller (M5's
+ * `lib/store/**`, which DOES have `now` and DOES have `lib/decay/**`), not
+ * as something `contradict` recomputes internally. Concretely: a store is
+ * expected to call `contradict` only for `older` memories that are still
+ * live (undecayed past `forgetFloor`) — a memory already decayed past that
+ * floor would already have been `forget(..., "age-exceeded", now)`'d by
+ * M3/M5's own machinery before ever reaching `contradict` at all, so
+ * "older is still inside its freshness window" is, in practice, equivalent
+ * to "older is still a live `Memory<TValue>`" — which IS structurally
+ * guaranteed by this function's own parameter type (a `TombstonedMemory`
+ * cannot be passed in). This is disclosed here, precisely, as a genuine
+ * simplification this milestone makes because the alternative — inventing
+ * a `now` parameter and a decay call `contradict(older, newer)`'s own
+ * stated signature never asks for, reaching into M3's frozen-elsewhere
+ * territory — would be worse: exactly the "inventing an interface M3 may
+ * contradict" this milestone's own brief warns against.
  */
 export function contradict<TValue extends Json>(
   older: Memory<TValue>,
@@ -203,10 +210,10 @@ export function contradict<TValue extends Json>(
     case "inapplicable":
       return notComparable(older, newer, comparison.reason);
     case "disagree":
-      // §5.1's plain numeric comparison on RECORDED confidence — see this
-      // function's own header for why `Memory.confidence`, not
-      // `Provenance.tier`, is read here.
-      return newer.confidence >= older.confidence
+      // §5.1's split, decided on RECORDED TIER — see this function's own
+      // header, and tier-split.ts's, for why `Provenance.tier`, not
+      // `Memory.confidence`, is read here.
+      return resolveTierSplit(older.source.tier, newer.source.tier) === "superseded"
         ? { outcome: "superseded", older, newer }
         : { outcome: "disputed", candidates: [older, newer] };
   }

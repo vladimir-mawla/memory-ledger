@@ -150,6 +150,15 @@ language "for flexibility." Rejected for the same reason `memory-plan.md` cites 
 string` field is one step from being the exact "model's prose" escape hatch this project's whole read path
 (§2) exists to refuse.
 
+**AMENDMENT (M3, `.genesis/decisions/0002-decay.md`, Decision 1):** the decaying variant's discriminant
+literal, `"linear-to-floor"` above, was RENAMED to `"half-life"` once M3 actually built the interpreter and
+found the only curve `halfLifeMs` can honestly express is exponential half-life decay, not a straight line —
+"linear-to-floor" was a readability label, never a precise mathematical commitment, and shipping a
+permanently mismatched name was judged worse than a narrow, documented reopening of `lib/contracts` to fix
+it. This paragraph is left as the historical record of what M1 originally chose and why the SHAPE (data, not
+a closure, two members) is still correct; the literal itself is current, as of M3, in `decay-policy.ts` and
+`0002-decay.md`, not here.
+
 ## Decision 5 — BELIEFANSWER: closed four-variant union, exhaustively matched, never a ranked list or a bare score
 
 **Alternatives considered:**
@@ -218,12 +227,17 @@ more is computed here than actually is.
 - Negative / cost: `Provenance.tier` has no default and no derivation helper — every future caller (M4, M6)
   must state it explicitly, with no convenience shortcut. Accepted: the alternative was guessing a mapping
   this milestone has no authority to fix into a frozen file.
-- Negative / cost: `effectiveConfidence`'s live branch is not yet real decay — M3 inherits a function that
-  looks complete from its signature but is only two-thirds implemented. Mitigated, not eliminated, by the
-  test that is designed to fail once M3 lands.
-- Forward note for M3: replace ONLY `effective-confidence.ts`'s final `return record.confidence;` with a
-  real call to `decay(record, now).confidence`. The tombstoned-zero and clock-inconsistency branches above
-  are already correct under §3/§7's own rules and should not need to change.
+- Negative / cost: `effectiveConfidence`'s live branch is not yet real decay — at the time of THIS writing,
+  M3 was expected to complete it in place. **SUPERSEDED, see AMENDMENT below.**
+- **AMENDMENT (M3, `.genesis/decisions/0002-decay.md`, Decision 5):** the forward note originally here —
+  "replace ONLY `effective-confidence.ts`'s final `return record.confidence;` with a real call to
+  `decay(record, now).confidence`" — turned out to be WRONG, not merely premature: `lib/decay` necessarily
+  imports FROM `lib/contracts`, so wiring `decay` into `effective-confidence.ts` the other way would create a
+  real circular dependency and invert this project's own layering. This ADR could not have foreseen that,
+  since `lib/decay` did not exist yet when it was written. **What actually happened:** `effectiveConfidence`
+  stays exactly as written, permanently — it is a complete, correct answer for what `lib/contracts` alone can
+  decide, not an unfinished one. The real, elapsed-time-aware answer is `queryConfidence`, in
+  `lib/decay/query-confidence.ts`, one layer up. See `0002-decay.md` for the full ruling.
 - Forward note for M4/M6: `Provenance.tier`'s mapping from `SourceKind` (if one is ever needed generically,
   rather than decided per call site) is an open question this ADR deliberately left unresolved — see
   Decision 1. Whoever needs it first should decide it with a real case in hand, and record that decision

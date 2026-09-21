@@ -66,8 +66,26 @@
  * ("model every value as data, never a closure") rules out embedding a
  * live "check now" function on this immutable type. `revocable` only
  * records that THIS source is the *kind* of thing revocation applies to at
- * all; M5's `lib/store/**` owns the actual revocation registry and the
- * `forget(..., "source-revoked", now)` mechanism that reads it.
+ * all.
+ *
+ * AMENDMENT (M6, `.genesis/decisions/0005-domain.md`): the paragraph
+ * originally here asserted, as settled fact, that "M5's `lib/store/**`
+ * owns the actual revocation registry and the `forget(...,
+ * "source-revoked", now)` mechanism that reads it." That was WRONG, not
+ * merely premature: M5 (`.genesis/decisions/0004-store.md`) built
+ * `forget()`'s own mechanism only — no registry exists anywhere in
+ * `lib/store/**`, confirmed directly (`git grep -n "revoke" lib/store`
+ * turns up nothing outside `ForgetReason`'s own literal). This file could
+ * not have foreseen that at M1, since no store existed yet to check
+ * against. **What actually happened:** no registry was ever built, at any
+ * layer. `domains/personal-assistant/store.ts`'s `revokeSource` (M6) is a
+ * plain filter over currently-tracked live memories sharing a
+ * `sourceId`, restricted to those with `revocable: true` — the identical,
+ * no-registry shape M5 itself already established for `scope-exited`
+ * (`forget(memory, "scope-exited", now)` as "a plain, direct call", per
+ * `0004-store.md`, Decision 5). A real revocation-checking registry, if
+ * one is ever genuinely needed, remains undecided and belongs to whichever
+ * future caller has a concrete case for one.
  */
 export type SourceKind = "human" | "counterparty" | "system" | "derived";
 

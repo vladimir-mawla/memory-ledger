@@ -138,7 +138,8 @@ type HalfLifePolicy = Extract<DecayPolicy, { kind: "half-life" }>;
 export type InvalidHalfLifePolicy =
   | { readonly reason: "half-life-not-finite"; readonly received: number }
   | { readonly reason: "half-life-not-positive"; readonly received: number }
-  | { readonly reason: "forget-floor-exceeds-doubted-threshold"; readonly forgetFloor: number; readonly doubtedThreshold: number };
+  | { readonly reason: "forget-floor-exceeds-doubted-threshold"; readonly forgetFloor: number; readonly doubtedThreshold: number }
+  | { readonly reason: "forget-floor-at-or-above-maximum"; readonly forgetFloor: number };
 
 /**
  * Explicit, total validation for the one policy shape that has arithmetic
@@ -156,6 +157,29 @@ function validateHalfLifePolicy(policy: HalfLifePolicy): InvalidHalfLifePolicy |
   }
   if (policy.forgetFloor > policy.doubtedThreshold) {
     return { reason: "forget-floor-exceeds-doubted-threshold", forgetFloor: policy.forgetFloor, doubtedThreshold: policy.doubtedThreshold };
+  }
+  // A floor at or above 1 defeats the curve entirely: `Confidence` is
+  // capped at 1, so EVERY memory classifies `"forgettable"` from the
+  // instant it is created, at elapsed = 0, no matter how long its
+  // half-life. Independent verification found this by probe —
+  // `{ forgetFloor: 1, doubtedThreshold: 1 }` passed every check above
+  // (the floor does not exceed the threshold) and produced a freshly
+  // affirmed memory reporting `"forgettable"` while its confidence sat
+  // correctly at 0.9. It never crashed and never broke the
+  // never-exceeds-recorded invariant, so it was a caller-configuration
+  // footgun rather than a maths defect — but a policy whose every answer
+  // is the same answer is not a policy, and letting it through means a
+  // domain could silently configure a store that forgets everything
+  // immediately.
+  //
+  // Deliberately scoped to `>= 1` and NOT to `forgetFloor ===
+  // doubtedThreshold`, which is legitimate below 1: it collapses the
+  // `"doubted"` band to nothing, giving a policy that goes straight from
+  // `"believed"` to `"forgettable"` at one boundary. That is a coherent
+  // choice and `__tests__/decay.test.ts`'s "does NOT overtighten" case
+  // pins it as accepted.
+  if (policy.forgetFloor >= 1) {
+    return { reason: "forget-floor-at-or-above-maximum", forgetFloor: policy.forgetFloor };
   }
   return null;
 }

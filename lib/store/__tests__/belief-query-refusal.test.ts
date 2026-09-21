@@ -28,8 +28,8 @@ import { fixtureMemory, fixtureTombstonedMemory, FIXTURE_BELIEVED_AT } from "./f
  */
 describe("belief-query refusal — a TombstonedMemory is structurally unacceptable to queryBelief's own real parameter type", () => {
   it("a live Memory[] is accepted, as expected", () => {
-    const answer = queryBelief([fixtureMemory()], [], FIXTURE_BELIEVED_AT);
-    expect(answer.status).toBe("believed");
+    const result = queryBelief([fixtureMemory()], [], FIXTURE_BELIEVED_AT);
+    expect(result.answer.status).toBe("believed");
   });
 
   it("TYPE-LEVEL: a TombstonedMemory[] does not satisfy queryBelief's ReadonlyArray<Memory<TValue>> candidates parameter", () => {

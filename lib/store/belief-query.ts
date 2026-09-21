@@ -18,6 +18,45 @@ import { forget } from "./forget.js";
  * — never silently fall back to the highest-confidence tombstoned value."
  *
  * ─────────────────────────────────────────────────────────────────────────
+ * REVISED AFTER REVIEW: `"superseded"` NOW ANSWERS FROM THE NEWER MEMORY,
+ * NOT `"disputed"` — §8's own demo depends on this
+ * ─────────────────────────────────────────────────────────────────────────
+ * An earlier revision of this file collapsed THREE of `contradict`'s four
+ * outcomes — `"disputed"`, `"superseded"`, `"not-comparable"` — into a
+ * single `"disputed"` answer, reasoning that `BeliefAnswer`'s frozen
+ * `"believed"` variant has nowhere to carry the tombstone a real supersede
+ * resolution would produce. That reasoning was WRONG, not merely
+ * conservative: `memory-plan.md` §8's own demo moment is EXACTLY the
+ * `"superseded"` case (two same-tier `direct-avowal` memories, the newer
+ * disagreeing — ADR 0003's own worked contrast) and its own text is
+ * explicit: "the system answers with the new address, reports that the old
+ * one is no longer surfaced as belief... and produces the tombstone." An
+ * implementation that answers `"disputed"` here shows a judge two
+ * addresses side by side on the one screen this whole project is built to
+ * get right. See `.genesis/decisions/0004-store.md`, Decision 2 (REVISED),
+ * for the full argument this header only summarizes. Two changes fell out
+ * of fixing this:
+ *
+ *   1. `queryBelief` now DOES lazily mint the missing tombstone on a live
+ *      `"superseded"` detection — composing `forget(older, "contradicted",
+ *      now, newer.id)`, the exact same "lazy tombstone at query time"
+ *      pattern this file already used for a decay-forgettable candidate
+ *      (`partitionByDecay`, below). This is not a new kind of side effect
+ *      introduced for this one case; it is the established pattern applied
+ *      to the second place this function already knew something ought to
+ *      be forgotten.
+ *   2. Since `BeliefAnswer` (frozen, `lib/contracts`) genuinely has no slot
+ *      to carry "and by the way, I just forgot this other memory too," this
+ *      function's OWN return type is no longer bare `BeliefAnswer<TValue>`
+ *      — it is `BeliefQueryResult<TValue>`, a small local wrapper
+ *      (`{ answer, newlyForgotten }`) that carries the `BeliefAnswer` AND
+ *      every `Tombstone` this one call minted (from BOTH the decay sweep
+ *      and a live supersede resolution, uniformly). `memory-plan.md`'s own
+ *      text never pins `BeliefQuery`'s exact return shape beyond "the read
+ *      path" — M5 owns deciding it, the same authority M1's own ADR used to
+ *      correct the plan's literal `Tombstone`/`Memory.status` sketches.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
  * THE COMPILE-TIME REFUSAL, MADE REAL (not just expressible, per M1)
  * ─────────────────────────────────────────────────────────────────────────
  * `candidates: ReadonlyArray<Memory<TValue>>` — never `TombstonedMemory`,
@@ -32,11 +71,9 @@ import { forget } from "./forget.js";
  * identical `@ts-expect-error` shape against THIS function, the real one —
  * see that test file for why an unused `@ts-expect-error` is itself a
  * compile error (`TS2578`), which is what makes the proof real rather than
- * decorative: if this refusal property were ever accidentally lost (e.g. a
- * future edit widened `Memory.status` to include `"tombstoned"`, undoing
- * M1's own Decision 2), the `@ts-expect-error` line would stop suppressing
- * anything, and `tsc` would fail on THAT line specifically, not stay
- * silently green.
+ * decorative. Widening this function's RETURN type (above) has no bearing
+ * on this proof at all — the refusal lives entirely in the `candidates`
+ * PARAMETER's type, untouched by this revision.
  *
  * Tombstoned records enter this function ONLY as `Tombstone`
  * (`lib/contracts/tombstone.ts`) — the small, immutable receipt, never the
@@ -46,7 +83,35 @@ import { forget } from "./forget.js";
  * caller holding `TombstonedMemory<TValue>[]` extracts `.tombstone` from
  * each before calling this function — the extraction happens OUTSIDE this
  * file, and this file's own parameter list never has a slot a
- * `TombstonedMemory` could be smuggled into.
+ * `TombstonedMemory` could be smuggled into. The SAME discipline is why
+ * `newlyForgotten` (below) is `readonly Tombstone[]`, not
+ * `TombstonedMemory[]`: a `Tombstone` alone is already the complete
+ * "receipt" `memory-plan.md` §4 asks for, and a caller that wants the full
+ * `TombstonedMemory` can reconstruct it by calling `forget` again with the
+ * identical `(memory, reason, now[, supersededBy])` — `forget` needs no
+ * hidden state to do so.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * "CONFIDENCE DROPPED TO ZERO THE INSTANT THE NEW ONE ARRIVED" —
+ * SURFACED, NEVER REWRITTEN
+ * ─────────────────────────────────────────────────────────────────────────
+ * `memory-plan.md` §8's own language for the demo moment. M1 drew the
+ * `Memory.confidence` (recorded, immutable) vs. `effectiveConfidence`
+ * (computed) line specifically so this sentence could be literally true
+ * without ever rewriting a record (`lib/contracts/effective-
+ * confidence.ts`'s own header). Once `older` is tombstoned — here, at query
+ * time, on a live `"superseded"` detection — `effectiveConfidence`/
+ * `queryConfidence` (`lib/decay/query-confidence.ts`) report EXACTLY `0`
+ * for it, unconditionally, discriminated on the type-level `status` tag,
+ * the same guarantee those two frozen functions already give any other
+ * `TombstonedMemory`. This function never computes or touches a
+ * "dropped-to-zero" number itself — it relies on the ALREADY-PROVEN,
+ * ALREADY-FROZEN fact that tombstoning IS what makes that number report
+ * zero. `__tests__/belief-query.test.ts`'s demo-shaped test proves this
+ * directly: it reconstructs the exact `TombstonedMemory` this function's
+ * own `newlyForgotten` tombstone corresponds to and asserts
+ * `queryConfidence(...) === ZERO_CONFIDENCE`, composing `lib/decay`'s own
+ * frozen function rather than re-deriving the claim.
  *
  * ─────────────────────────────────────────────────────────────────────────
  * PRECONDITION (mirrors `contradict`'s own, per ADR 0003's forward note for
@@ -57,11 +122,6 @@ import { forget } from "./forget.js";
  * itself to filter its own input. `tombstones` is, similarly, whatever
  * subset of the caller's tombstone log the caller believes is relevant to
  * report for this same query — this function does not filter that either.
- * A caller that hands `queryBelief` an unrelated tombstone log alongside an
- * unrelated candidate list gets an unrelated (but not incorrect, given what
- * it was told) answer — the same "trusts its caller's grouping" discipline
- * `contradict.ts`'s own header discloses for `(subject, predicate)` and
- * scope-overlap eligibility one layer down.
  *
  * ─────────────────────────────────────────────────────────────────────────
  * COMPOSITION, NOT REIMPLEMENTATION — the ADR's own design question,
@@ -71,35 +131,7 @@ import { forget } from "./forget.js";
  * own. Every freshness judgment is `decay()` (`lib/decay/decay.ts`,
  * frozen); every disagreement judgment is `contradict()`
  * (`lib/contradiction/contradict.ts`, frozen); every act of forgetting is
- * `forget()` (`./forget.ts`, this milestone, same directory). Two concrete
- * compositions:
- *
- *   1. AGE-EXCEEDED, LAZILY, AT QUERY TIME. `.genesis/decisions/
- *      0002-decay.md`'s own forward note for M5: "`decay(memory,
- *      now).status === 'forgettable'` is the signal to call `forget(memory,
- *      'age-exceeded', now)` — `lib/decay` never does this itself."
- *      `partitionByDecay` (below) is that composition: any candidate whose
- *      OWN decay curve has already crossed its `forgetFloor` is converted,
- *      right here, into a real `Tombstone` via `forget(...,
- *      "age-exceeded", now)` and folded into this call's own
- *      `unknown.tombstones` reporting — never reported as `"believed"`/
- *      `"doubted"` with a confidence number that would, if printed, already
- *      read as effectively zero. See "WHO ENFORCES THE ADR 0003
- *      PRECONDITION" below for why this lazy, per-call sweep — rather than
- *      a separate maintenance job the caller must remember to run first —
- *      is this milestone's answer to that design question.
- *   2. DISPUTED/SUPERSEDED/NOT-COMPARABLE, VIA A LIVE `contradict()` CALL,
- *      NEVER A STORED `Memory.status` READ. When exactly two live
- *      candidates remain after step 1, this function does not trust
- *      whatever `status` field either memory happens to carry (a caller
- *      could construct a `Memory` with `status: "believed"` even though a
- *      real disagreement exists — `lib/contracts` never validates that
- *      `status` was set consistently with the OTHER live memories around
- *      it, because a `Memory` in isolation has no way to know about its
- *      siblings). Instead, `queryBelief` calls `contradict(older, newer)`
- *      itself, ordered by `believedAt` (mirroring `contradict`'s own
- *      anti-symmetry requirement), and answers from THAT outcome — see
- *      "TWO OR MORE LIVE CANDIDATES" below for the full four-way switch.
+ * `forget()` (`./forget.ts`, this milestone, same directory).
  *
  * ─────────────────────────────────────────────────────────────────────────
  * WHO ENFORCES THE ADR 0003 PRECONDITION? — the design question this
@@ -120,91 +152,75 @@ import { forget } from "./forget.js";
  * maintenance function a caller might forget to run first: `partitionByDecay`
  * (below) is the very first thing this function does, on every element of
  * `candidates`, BEFORE any candidate is eligible to reach `contradict` at
- * all (see the two-or-more-candidates branch below — it only ever receives
- * elements of `fresh`, never raw `candidates`). This makes ADR 0003's own
- * assumed precondition TRUE BY CONSTRUCTION at the one call site that
- * matters, rather than merely documented and hoped for.
- *
- * A DELIBERATELY REJECTED ALTERNATIVE: a separate, standalone `sweepDecayed`
- * maintenance function the caller must remember to run before every query.
- * Rejected because "remember to run this first" is exactly the kind of
- * discipline-by-convention this account's own standing note about
- * conflating a stated constraint with an enforced one warns against — the
- * en­forcement belongs inside the one function whose own correctness
- * actually depends on it holding, not in a second function a caller could
- * skip.
+ * all. This makes ADR 0003's own assumed precondition TRUE BY CONSTRUCTION
+ * at the one call site that matters, rather than merely documented and
+ * hoped for.
  *
  * ─────────────────────────────────────────────────────────────────────────
  * ZERO, ONE, TWO-OR-MORE LIVE CANDIDATES — the whole decision tree
  * ─────────────────────────────────────────────────────────────────────────
- *   - ZERO fresh candidates (after step 1's sweep): `"unknown"`. `reason:
- *     "no-memory"` if there is truly nothing to point at (the ORIGINAL
- *     `tombstones` argument was empty AND nothing was swept just now);
- *     otherwise `reason: "all-known-memories-tombstoned"`, `tombstones`
- *     carrying both the caller-supplied log AND anything this call itself
- *     just swept — `memory-plan.md` §4's own falsifiable test, satisfied
- *     directly, never inferred from the absence of a crash.
+ *   - ZERO fresh candidates (after the decay sweep): `"unknown"`. `reason:
+ *     "no-memory"` if there is truly nothing to point at; otherwise
+ *     `reason: "all-known-memories-tombstoned"`, `tombstones` carrying both
+ *     the caller-supplied log AND anything this call itself just swept —
+ *     `memory-plan.md` §4's own falsifiable test, satisfied directly.
  *   - EXACTLY ONE fresh candidate: `"believed"` or `"doubted"`, decided by
- *     THAT candidate's own already-computed `DecayResult.status` (no second
- *     `decay()` call — `partitionByDecay` keeps the result it already
- *     computed rather than discarding and recomputing it), confidence taken
- *     from the SAME `DecayResult`, never from `memory.confidence` directly
- *     (`memory-plan.md` §3: a query "only ever reports
- *     `effectiveConfidence`" — read, post-M3, as the composed answer,
- *     `decay(...).confidence`, exactly what M3's own ADR's forward note for
- *     M5 says to call).
+ *     THAT candidate's own already-computed `DecayResult` (no second
+ *     `decay()` call).
  *   - TWO OR MORE fresh candidates: the two with the LATEST `believedAt`
  *     are taken as `(older, newer)` and handed to `contradict`. (More than
  *     two fresh, same-key candidates coexisting is a violation of this
- *     function's own precondition — a well-formed store's write path,
- *     un­built by this milestone, is expected to keep at most two live per
- *     key, exactly the pair a `disputed` outcome leaves behind — so this is
- *     disclosed, tested defensively for "does not crash, does not silently
- *     drop the disagreement," and not exhaustively specified beyond that.)
- *     `contradict(older, newer)`'s four outcomes:
- *       - `"no-conflict"` — the two values genuinely agree; nothing to
- *         report as a disagreement, so this answers `"believed"` on
- *         `newer` (the fresher of two agreeing statements) at its own
- *         decayed confidence.
- *       - `"disputed"` — `memory-plan.md` §5.1's own outcome, answered
- *         directly: `{status: "disputed", candidates: [older, newer]}`.
- *       - `"superseded"` OR `"not-comparable"` — treated IDENTICALLY to
- *         `"disputed"` here, and this is a genuine, disclosed finding of
- *         this milestone, not an oversight: `"superseded"` means `older`
- *         SHOULD already have been tombstoned by whichever write-time
- *         process affirmed `newer` (this milestone builds no such
- *         write-time `affirm`/reconciliation orchestration — PLAN.md's own
- *         M5 row asks for `forget` and the read path, not a full write
- *         path). Two live memories BOTH still being visible to a query
- *         despite one having lost, mechanically, is exactly
- *         `memory-plan.md` §10's same-tick race shape. This function could
- *         lazily mint the missing tombstone right here (`forget(older,
- *         "contradicted", now, newer.id)`) — but `BeliefAnswer`'s frozen
- *         `"believed"` variant has nowhere to put that tombstone for the
- *         caller to see or persist, so doing so would silently discard the
- *         very proof `memory-plan.md` §4 requires to exist ("the record...
- *         is the 'here is the receipt' half"). Reporting `"believed"`
- *         anyway, with the tombstone thrown away unread, would be worse
- *         than reporting `"disputed"`: it would look resolved while
- *         leaving no receipt behind. `memory-plan.md` §10(a)'s own
- *         acceptance criterion — "either `disputed` or reflects the new
- *         memory — never a `believed` answer built from data already
- *         superseded" — is satisfied by the SAFER of its two named options.
- *         Actually reconciling this race (tombstoning `older` for real,
- *         durably) is this milestone's own named forward note for M6's
- *         write-path/M7's failure suite, not something this read-only
- *         function does silently. `"not-comparable"` gets the same
- *         treatment for the same underlying reason: never silently prefer
- *         one candidate when `contradict` itself would not commit to a
- *         verdict.
+ *     function's own precondition — disclosed, tested defensively, not
+ *     exhaustively specified.) `contradict(older, newer)`'s four outcomes:
+ *       - `"no-conflict"` — the two values genuinely agree; answers
+ *         `"believed"`/`"doubted"` on `newer` (the fresher of two agreeing
+ *         statements) at its own decayed confidence.
+ *       - `"superseded"` — `older` LOSES. This function tombstones it right
+ *         here (`forget(older, "contradicted", now, newer.id)`, folded into
+ *         `newlyForgotten`) and answers `"believed"`/`"doubted"` on `newer`
+ *         — never `"disputed"`. This is the fix this revision makes; see
+ *         the header section above and `0004-store.md` Decision 2 for the
+ *         full argument.
+ *       - `"disputed"` — `memory-plan.md` §5.1's own genuine non-outcome:
+ *         answered directly, `{status: "disputed", candidates: [older,
+ *         newer]}`, nothing tombstoned (neither side lost).
+ *       - `"not-comparable"` — `contradict` itself refused to commit to a
+ *         verdict (mismatched subject/predicate, non-overlapping scope, or
+ *         a `believedAt` tie/inversion — all caller-precondition
+ *         violations under this function's own documented contract).
+ *         Answered as `"disputed"`, THE SAME VARIANT as a genuine dispute —
+ *         a DELIBERATE, DISCLOSED COLLAPSE, not an oversight:
+ *         `BeliefAnswer.disputed`'s only payload is the two-candidate
+ *         tuple (`belief-answer.ts`, frozen); there is no field to carry
+ *         `NotComparableReason` even if this function wanted to, and
+ *         `BeliefAnswer` cannot be widened by this milestone to add one.
+ *         Both facts share one property that matters for a caller — "no
+ *         side has a decisive verdict, nothing was tombstoned" — but a
+ *         reader who cares WHY should be told this is where that
+ *         distinction is lost, not left to discover it by grep.
  */
+
+export interface BeliefQueryResult<TValue extends Json> {
+  readonly answer: BeliefAnswer<TValue>;
+  /**
+   * Every `Tombstone` THIS call minted — from the decay sweep
+   * (`partitionByDecay`) and/or a live `"superseded"` resolution. Not
+   * necessarily identical to `answer`'s own `tombstones` field (present
+   * only on `unknown`): a `"believed"` answer following a supersede
+   * resolution reports the winner in `answer` and the loser's brand-new
+   * tombstone HERE — the one place `BeliefAnswer`'s frozen shape has no
+   * room for it. Empty whenever this call caused nothing new to be
+   * forgotten.
+   */
+  readonly newlyForgotten: readonly Tombstone[];
+}
 
 export type BeliefQuery<TValue extends Json> = (
   candidates: ReadonlyArray<Memory<TValue>>,
   tombstones: ReadonlyArray<Tombstone>,
   now: CapturedAt,
   comparator?: ValueComparator,
-) => BeliefAnswer<TValue>;
+) => BeliefQueryResult<TValue>;
 
 interface FreshCandidate<TValue extends Json> {
   readonly memory: Memory<TValue>;
@@ -215,7 +231,7 @@ interface FreshCandidate<TValue extends Json> {
 function partitionByDecay<TValue extends Json>(
   candidates: ReadonlyArray<Memory<TValue>>,
   now: CapturedAt,
-): { readonly fresh: ReadonlyArray<FreshCandidate<TValue>>; readonly newlyForgotten: ReadonlyArray<Tombstone> } {
+): { readonly fresh: ReadonlyArray<FreshCandidate<TValue>>; readonly newlyForgotten: readonly Tombstone[] } {
   const fresh: FreshCandidate<TValue>[] = [];
   const newlyForgotten: Tombstone[] = [];
   for (const memory of candidates) {
@@ -242,23 +258,25 @@ export function queryBelief<TValue extends Json>(
   tombstones: ReadonlyArray<Tombstone>,
   now: CapturedAt,
   comparator: ValueComparator = DEFAULT_VALUE_COMPARATOR,
-): BeliefAnswer<TValue> {
-  const { fresh, newlyForgotten } = partitionByDecay(candidates, now);
-  const allTombstones = newlyForgotten.length === 0 ? tombstones : [...tombstones, ...newlyForgotten];
+): BeliefQueryResult<TValue> {
+  const { fresh, newlyForgotten: decaySwept } = partitionByDecay(candidates, now);
 
   if (fresh.length === 0) {
-    return allTombstones.length === 0
-      ? { status: "unknown", reason: "no-memory", tombstones: [] }
-      : { status: "unknown", reason: "all-known-memories-tombstoned", tombstones: allTombstones };
+    const allTombstones = decaySwept.length === 0 ? tombstones : [...tombstones, ...decaySwept];
+    const answer: BeliefAnswer<TValue> =
+      allTombstones.length === 0
+        ? { status: "unknown", reason: "no-memory", tombstones: [] }
+        : { status: "unknown", reason: "all-known-memories-tombstoned", tombstones: allTombstones };
+    return { answer, newlyForgotten: decaySwept };
   }
 
   if (fresh.length === 1) {
-    return believedOrDoubted(fresh[0] as FreshCandidate<TValue>);
+    return { answer: believedOrDoubted(fresh[0] as FreshCandidate<TValue>), newlyForgotten: decaySwept };
   }
 
   // Two or more — see file header's "ZERO, ONE, TWO-OR-MORE" section for
-  // why the two LATEST believedAt are taken, and why every non-agreement
-  // outcome answers "disputed".
+  // why the two LATEST believedAt are taken, and for the full four-way
+  // switch below.
   const sorted = [...fresh].sort((a, b) => Date.parse(a.memory.believedAt) - Date.parse(b.memory.believedAt));
   const newer = sorted[sorted.length - 1] as FreshCandidate<TValue>;
   const older = sorted[sorted.length - 2] as FreshCandidate<TValue>;
@@ -266,11 +284,20 @@ export function queryBelief<TValue extends Json>(
   const check = contradict(older.memory, newer.memory, comparator);
   switch (check.outcome) {
     case "no-conflict":
-      return believedOrDoubted(newer);
+      return { answer: believedOrDoubted(newer), newlyForgotten: decaySwept };
+    case "superseded": {
+      // `older` lost — tombstone it right here, the same lazy-at-query-time
+      // pattern `partitionByDecay` already uses for a decay-forgettable
+      // candidate. See the file header's "REVISED AFTER REVIEW" section.
+      const tombstoned = forget(older.memory, "contradicted", now, newer.memory.id);
+      return { answer: believedOrDoubted(newer), newlyForgotten: [...decaySwept, tombstoned.tombstone] };
+    }
     case "disputed":
-    case "superseded":
     case "not-comparable":
-      return { status: "disputed", candidates: [older.memory, newer.memory] };
+      // Deliberately collapsed to the SAME BeliefAnswer variant — see the
+      // file header's dedicated paragraph for why, and what is lost by
+      // doing so.
+      return { answer: { status: "disputed", candidates: [older.memory, newer.memory] }, newlyForgotten: decaySwept };
     default:
       return assertNeverContradictionCheck(check);
   }

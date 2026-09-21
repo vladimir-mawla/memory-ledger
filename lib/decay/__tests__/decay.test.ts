@@ -184,6 +184,43 @@ describe("decay(memory, now) — the freshness interpreter for a declared DecayP
       expect(decay(memory, atOffsetMs(0)).status).toBe("believed"); // at zero elapsed, confidence is still the recorded 0.8, well above 0.3
     });
 
+    it("a forgetFloor at the maximum (1) is rejected — it would make every memory forgettable from the instant it is created", () => {
+      // Found by independent verification, by probe rather than by reading:
+      // { forgetFloor: 1, doubtedThreshold: 1 } passed every earlier check
+      // (the floor does not EXCEED the threshold) and produced a freshly
+      // affirmed memory reporting "forgettable" at elapsed = 0, while its
+      // confidence sat correctly at the recorded value.
+      //
+      // It never crashed, never produced NaN, and never broke the
+      // never-exceeds-recorded invariant — which is why it was reported as
+      // a caller-configuration footgun rather than a maths defect. It is
+      // rejected anyway: `Confidence` is capped at 1, so a floor at 1 means
+      // EVERY answer is "forgettable" no matter the half-life or the
+      // elapsed time, and a policy whose every answer is the same answer
+      // has defeated the curve it configures.
+      const memory = fixtureMemory({
+        decayPolicy: fixtureDecayingPolicy({ doubtedThreshold: 1 as Confidence, forgetFloor: 1 as Confidence }),
+      });
+      expect(decay(memory, atOffsetMs(0))).toEqual({ confidence: ZERO_CONFIDENCE, status: "forgettable" });
+      // And the reason is the new one, not a pre-existing check misfiring:
+      // forgetFloor (1) does not exceed doubtedThreshold (1), so the
+      // exceeds-threshold rule cannot be what caught this.
+      expect(decay(memory, atOffsetMs(999_999))).toEqual({ confidence: ZERO_CONFIDENCE, status: "forgettable" });
+    });
+
+    it("does NOT overtighten: a forgetFloor just below the maximum is valid, and still classifies a fresh memory normally", () => {
+      // The rejection above is scoped to >= 1, not to "high". A floor of
+      // 0.95 with a recorded confidence of 0.99 is a coherent, aggressive
+      // policy and must still work.
+      const memory = fixtureMemory({
+        confidence: 0.99 as Confidence,
+        decayPolicy: fixtureDecayingPolicy({ doubtedThreshold: 0.97 as Confidence, forgetFloor: 0.95 as Confidence }),
+      });
+      const result = decay(memory, atOffsetMs(0));
+      expect(result.confidence).toBe(0.99);
+      expect(result.status).toBe("believed");
+    });
+
     it("does NOT overtighten: the ordinary fixture policy used throughout this file is valid and produces normal, non-degenerate results", () => {
       const memory = fixtureMemory();
       const result = decay(memory, atOffsetMs(500));

@@ -45,7 +45,7 @@ export const MILESTONES: readonly Milestone[] = [
   { id: 2, title: "Deploy a live skeleton to Vercel", status: "done" },
   { id: 3, title: "The decay engine", status: "done" },
   { id: 4, title: "The contradiction engine", status: "done" },
-  { id: 5, title: "The forgetting engine (tombstoning)", status: "planned" },
+  { id: 5, title: "The forgetting engine (tombstoning)", status: "done" },
   { id: 6, title: "Domain: the personal-assistant memory adapter", status: "planned" },
   { id: 7, title: "The failure suite", status: "planned" },
   { id: 8, title: "The interactive demo", status: "planned" },

@@ -14,12 +14,16 @@ requires the domain wired end-to-end, driving `affirm`/`contradict`/
 `decay`/`forget` and `BeliefQuery`, with all four `BeliefAnswer` variants
 reached at least once by a real demo script (`npm run demo:memory`). All
 four `lib/**` layers are frozen; this milestone builds `domains/**` and
-`scripts/demo-memory.ts` only — `git diff main -- lib` is empty, verified
-directly in this build's own report, not merely claimed. This ADR answers
-the four design questions this milestone's own brief posed directly, plus
-one implementation-level correction (a `Json`-compatibility fix to
-`ShippingAddress`) found while making the frozen types actually compile
-against this domain's own data.
+`scripts/demo-memory.ts` only, with ONE narrow, EXPLICITLY AUTHORIZED
+exception — a comment-only correction to `lib/contracts/provenance.ts`
+(the "Correction — `provenance.ts`" section below) — reported directly
+with `git diff main -- lib`, not claimed empty when it is not. This ADR
+answers the four design questions
+this milestone's own brief posed directly, plus that authorized
+correction, plus one implementation-level fix (a `Json`-compatibility
+correction to `ShippingAddress`) found while making the frozen types
+actually compile against this domain's own data, plus two findings this
+milestone surfaced and is required to record rather than merely act on.
 
 ## Decision 1 — `tierForKind`: two concrete, hardcoded constructors for the two `SourceKind`s this domain actually has real cases for; NO generic four-way mapping
 
@@ -130,21 +134,30 @@ account deletion as the "most plausible" real case — this milestone had no
 reason to invent a second, less-obviously-real trigger when the more
 obvious one was already sitting in the forward note it was answering.
 
-## Decision 4 — `ForgetReason: "superseded"`: the one real case in this entire system, and why `contradict()` itself can never produce it
+## Decision 4 — `ForgetReason: "superseded"`: an enum member the frozen contracts already carried, that nothing before this milestone could reach — and a domain-owned tier table, not a reuse of `resolveTierSplit`
+
+**This is not this domain inventing a case the frozen contracts never
+asked for.** `lib/contracts/forget-reason.ts`'s `ForgetReason` union has
+carried the literal `"superseded"` since M1, and `memory-plan.md` §4's own
+definition is exactly this shape: "an explicit, NON-CONTRADICTING
+replacement (same value, refreshed source — e.g. re-confirmed by a more
+authoritative source)." The enum member existed from the start; what
+didn't exist, before this milestone, was any caller that could reach it.
 
 **Finding, stated plainly because it is easy to miss:** nothing built
 before this milestone can ever construct a `Tombstone` with reason
 `"superseded"`. `contradict()`'s own `ContradictionCheck` outcome literally
 spelled `"superseded"` maps, via `lib/store/belief-query.ts`'s lazy
 resolution, to `Tombstone.reason: "contradicted"` — a different word for a
-different case (two DISAGREEING values, tier-resolved). `memory-plan.md`
-§4's own definition of `ForgetReason: "superseded"` is "an explicit,
-NON-CONTRADICTING replacement (same value, refreshed source — e.g.
-re-confirmed by a more authoritative source)" — a case that, by
-definition, `contradict()` reports as `"no-conflict"` (the values AGREE),
-which is exactly why the tier-agnostic engine can never be the one to
-decide it: agreement is not evidence, from `contradict()`'s own point of
-view, that anything happened worth recording.
+different case (two DISAGREEING values, tier-resolved). A
+`ForgetReason: "superseded"` tombstone requires the two values to AGREE,
+which `contradict()` reports as `"no-conflict"` — a verdict from which the
+tier-agnostic engine correctly derives nothing further, since agreement
+carries no disagreement to adjudicate. This milestone is the first with
+standing to reach that enum member, not the first to invent a reason for
+one to exist — `main` at M5 (`chore(genesis): mark M5 done`, #10) already
+recorded, independently, the same reading: "`ForgetReason.superseded` is
+reserved for a different scenario" from `"contradicted"`.
 
 **This domain's real case:** `current-city` is first known only as a
 `derived-inference` (an integration guessing from calendar/contacts data);
@@ -154,20 +167,52 @@ it confirms, indistinguishable from it in some future query's `"disputed"`
 collision.
 
 **Chosen:** `recordFact` (`store.ts`), on a `"no-conflict"` outcome from
-`contradict()`, additionally checks `resolveTierSplit(older.tier,
-newer.tier)` (`lib/contradiction/tier-split.ts` — REUSED, never
-reimplemented, for a question that function was not originally built to
-answer but whose ranking table is exactly the one needed: "does the newer
-source outrank the older one"). If the split says `"superseded"` AND the
-two tiers are actually UNEQUAL, the older memory is tombstoned with
+`contradict()`, additionally checks whether the newer source's tier
+strictly outranks the older's. If so, the older memory is tombstoned with
 `forget(older, "superseded", now, newer.id)`.
 
-**Deliberately requires the tiers to differ, not merely that
-`resolveTierSplit` says `"superseded"`.** `resolveTierSplit` also returns
-`"superseded"` for two EQUAL-tier `direct-avowal`s (its own case 2) — but
-that shape (restating the identical value from the SAME kind of source) is
-this domain's disclosed `affirm()` gap, not this decision's concern: see
-Decision 5.
+**REVISED after independent review: the tier check is a SEPARATE,
+domain-owned table (`newerSourceOutranks`/`TIER_RANK`, `store.ts`), not a
+reuse of `lib/contradiction/tier-split.ts`'s `resolveTierSplit`.** The
+first pass of this decision called `resolveTierSplit(older.tier,
+newer.tier)` directly, reasoning that reuse-over-reimplementation was the
+right instinct and that the function's own ranking table was exactly what
+this domain needed. **That reasoning was sound about reuse in general and
+wrong about THIS reuse specifically**, caught on independent review:
+`resolveTierSplit` was built by ADR 0003 to decide `superseded` vs.
+`disputed` for two DISAGREEING values — calling it here, where the two
+values AGREE, borrowed its tier-ordering arithmetic while silently
+depending on its DISAGREEMENT semantics never changing either. The two
+questions happen to share an input (`ConfidenceTier` ordering) but are not
+the same question, and nothing enforced that they stay in sync: if a
+future milestone ever revised `resolveTierSplit`'s disagreement-side rule
+(e.g. to weigh a third signal alongside tier), this domain's
+reconfirmation path would change behavior silently, with no compile error
+and no test anywhere pointing at the actual cause.
+
+**Fix chosen: implement the tier comparison directly in the domain, not
+document the coupling and keep it.** `ConfidenceTier` is a closed,
+two-member union (`lib/contracts/provenance.ts`) — "which of two closed
+literals outranks the other" is a two-line table, not a curve or a
+comparator vocabulary this domain would otherwise have to guess at
+duplicating. `store.ts` now owns its own `TIER_RANK`/`newerSourceOutranks`,
+used for exactly this one decision. This is NOT the "tier resolution" this
+milestone's own scope brief says a domain must not reimplement — that
+phrase means `lib/contradiction`'s actual job (deciding `superseded`/
+`disputed` for two DISAGREEING values), which this domain still never
+touches: every disagreeing-value case still goes through the real,
+unmodified `contradict()`. The two-line table answers a narrower,
+domain-owned question `lib/contradiction` was never asked to answer at
+all — whether an AGREEING restatement counts as an explicit upgrade — and
+owning it locally costs two lines against a coupling whose real dependency
+(tier order only) was not what the borrowed function's name or purpose
+advertised.
+
+**Deliberately requires the tiers to differ, not merely that the newer
+tier is not outranked.** Two EQUAL-tier `direct-avowal`s restating the
+identical value get no special treatment here — that shape (restating the
+identical value from the SAME kind of source) is this domain's disclosed
+`affirm()` gap, not this decision's concern: see Decision 5.
 
 ## Decision 5 — What this domain deliberately does NOT build: an `affirm()`-equivalent for "restate the identical value from the same tier"
 
@@ -235,6 +280,38 @@ scan. `store.test.ts`'s own "the lazy sweep is PERSISTED" test proves both
 halves directly: the tombstone survives into `state.tombstoned`, AND a
 second query at the same moment does not mint a duplicate one.
 
+## Correction — `provenance.ts`: an authorized, comment-only reopening of `lib/contracts`, to fix a false claim rather than merely note it
+
+**Finding:** `lib/contracts/provenance.ts`'s own header, since M1, asserted
+as settled fact that "M5's `lib/store/**` owns the actual revocation
+registry and the `forget(..., "source-revoked", now)` mechanism that
+reads it." **This is false.** M5 (`.genesis/decisions/0004-store.md`)
+built `forget()`'s own mechanism only — no registry exists anywhere in
+`lib/store/**`, confirmed directly (`git grep -n "revoke" lib/store` turns
+up nothing outside `ForgetReason`'s own literal). M1 could not have
+foreseen this — no store existed yet, at M1, to check the claim against —
+but a frozen contract stating as fact that a component exists when
+nothing ever built it is the exact failure category a sibling project's
+own M1 was rejected for (a comment describing a function nothing had
+built).
+
+**Authorized: a narrow, comment-only reopening of
+`lib/contracts/provenance.ts`** — the same shape M3's own exception was
+granted, and the same shape M3's own decay-policy rename (ADR 0002,
+Decision 1) already used for a prose-only fix inside a frozen file.
+**No executable line changes.** `git diff main -- lib` (reported in this
+build's own report) shows exactly one file, comment lines only: the false
+sentence is replaced with an `AMENDMENT (M6, ...)` paragraph stating what
+is actually true (no registry exists at any layer; `revokeSource`,
+`domains/personal-assistant/store.ts`, is a plain filter over
+currently-tracked live memories — the identical no-registry shape M5
+itself already established for `scope-exited`) and pointing at this ADR
+for the full record. This is corrected, not merely disclosed, for the
+same reason ADR 0002 gave for renaming `"linear-to-floor"` rather than
+just documenting the mismatch: "a shipped [file] carrying a permanently
+wrong [claim] is worse than a one-line reopening, and later milestones
+will all read it."
+
 ## Correction — `ShippingAddress` needed to be a `Record`, not a plain `interface`, to satisfy `Json`
 
 Found while making this milestone's own types compile against
@@ -252,6 +329,50 @@ touched `lib/contracts` — `Json`'s own definition is unchanged and frozen;
 only this domain's own type needed to be expressed differently to satisfy
 it.
 
+## Finding — `Memory.status` is never read by any engine function; forward note for M8/M9
+
+**Finding, worth more than a footnote because a frozen field that looks
+load-bearing and is not will mislead a future reader — in particular
+M8's own UI author, who will see the field on every `Memory` value and
+may reasonably assume reading it is meaningful.** `Memory.status`
+(`"believed" | "doubted" | "disputed"`, `lib/contracts/memory.ts`, frozen
+since M1) is never read by `decay()` (`lib/decay/decay.ts`), never read
+by `contradict()` (`lib/contradiction/contradict.ts`), and never read by
+`queryBelief()` (`lib/store/belief-query.ts`) — confirmed directly, `git
+grep -n "\.status" -- lib/decay lib/contradiction lib/store` (excluding
+`__tests__/`) turns up zero matches in `lib/contradiction`, and in
+`lib/decay`/`lib/store` only the `record.status === "tombstoned"`
+type-discriminant check (`query-confidence.ts` — the structural refusal
+itself, not a business-logic read) and `DecayResult.status` (`decay()`'s
+OWN computed classification, a different type from `Memory.status`,
+per `decay.ts`'s own header) — never a read of a LIVE `Memory`'s own
+`status` field to decide `believed`/`doubted`/`disputed`. Every one of
+those three functions RECOMPUTES its own answer fresh, every
+call, from `(confidence, decayPolicy, believedAt, value, source.tier,
+now)` — never from a memory's own stored `status` label.
+
+**This domain's own `toMemory` (`facts.ts`) always sets `status:
+"believed"` at construction**, for exactly this reason: it is the only
+honest label a memory can carry the instant it is created, before
+anything has had a chance to contradict or decay it, and since nothing
+downstream trusts the field for a real decision, there is no more
+accurate value this domain could assign instead.
+
+**Not a bug to fix — recorded as a disclosed limitation, and the field is
+NOT removed.** `Memory.status`'s three-member narrowing is load-bearing
+for a DIFFERENT, real reason (M1's own ADR, Decision 2): it is what makes
+`TombstonedMemory` structurally distinct from `Memory`, which is what
+makes the compile-time tombstone refusal possible at all. Removing or
+reinterpreting the field would touch that frozen property for a
+milestone (M6) with no authority to reopen `lib/contracts` beyond the one
+narrow, authorized correction above. **Forward note for M8 and M9,** in
+the same explicit style ADR 0001 used to hand this milestone its own
+`tierForKind` question: a UI or documentation author reading a `Memory`
+value should not infer current belief status from its own `.status`
+field — the real, current answer is always whatever `queryBelief()` (or
+this domain's own `query()`) returns for that memory's coordinate at the
+moment asked, never a label sitting on the record itself.
+
 ## Consequences
 
 - Positive: every one of this milestone's own real cases (`tierForKind`,
@@ -262,13 +383,16 @@ it.
   loudly (non-zero exit) if the engine ever disagreed with this file's own
   narrative.
 - Positive: `git grep -n --untracked "0.5 \*\*\|Math.pow(0.5)" -- domains/`
-  returns nothing at all, and `git grep -n --untracked "tier ===" --
-  domains/` returns exactly one line — `store.ts`'s own header comment
-  QUOTING this very check, not a real comparison (`grep -rn "tier ===" |
-  grep -v "^\s*\*" | grep -v "grep -n"` — i.e. real code outside comments —
-  returns nothing) — no decay arithmetic, no raw tier comparison, is
-  reimplemented anywhere in `domains/**`; every doubt-mechanism is a real
-  call into the frozen engine that owns it.
+  and `git grep -n --untracked "tier ===" -- domains/` both return nothing
+  at all — no decay arithmetic, no raw disagreement-tier comparison, is
+  reimplemented anywhere in `domains/**`; every DISAGREEING-value judgment
+  is a real, unmodified call into `contradict()`. The one tier-ORDERING
+  fact this domain does own locally (`TIER_RANK`/`newerSourceOutranks`,
+  Decision 4) is a two-line table for a question `lib/contradiction` was
+  never asked to answer, not a reimplementation of anything it already
+  computes — see Decision 4 for the full argument, including the
+  independent-review correction that put it here instead of coupling to
+  `resolveTierSplit`.
 - Positive: the fair bag-of-words/cosine baseline (`baseline.ts`) genuinely
   loses on this corpus, exactly as `memory-plan.md` §8 predicts — verified
   by both a hand-worked arithmetic test (`baseline.test.ts`) and the live
@@ -283,6 +407,19 @@ it.
   "restate the identical value from the same tier" (Decision 5) — a real,
   intentional gap, not an oversight, pinned directly by a test rather than
   left to be discovered by a future caller expecting different behavior.
+- Positive: `lib/contracts/provenance.ts`'s false claim about M5 owning a
+  revocation registry is now corrected, not merely disclosed in this ADR —
+  a future reader of that frozen file will read the true architecture
+  directly at the source, not only here.
+- Negative / cost, disclosed: `lib/**` is no longer byte-identical to
+  `main` — one file, comment lines only, in one authorized, narrow
+  reopening. `git diff main -- lib` (reported in this build's own report)
+  shows the full, exact scope.
+- Positive, and worth stating for whoever verifies this milestone next:
+  `Memory.status`'s "never read by any engine function" finding is now a
+  named, permanent forward note (see the Finding section above), not a
+  fact a future M8/M9 author would have to rediscover independently by
+  reading `lib/decay`/`lib/contradiction`/`lib/store` line by line.
 - Forward note for M7: the failure suite's own required baseline contrast
   (`memory-plan.md` §8, restated in `PLAN.md`'s M7 row) can import
   `domains/personal-assistant/baseline.ts`'s `rankBySimilarity` directly
@@ -311,8 +448,19 @@ it.
   matches M5's own precedent for the identical kind of decision.
 - Treating EQUAL-tier same-value restatement the same as the real
   unequal-tier upgrade case for `ForgetReason: "superseded"` (Decision 4)
-  — `resolveTierSplit` alone would conflate them; this domain deliberately
-  requires the tiers to differ.
+  — this domain deliberately requires the tiers to differ.
+- REVISED, not merely considered: this decision's OWN first pass, reusing
+  `resolveTierSplit(older.tier, newer.tier)` for the reconfirmation check
+  (Decision 4) — internally reasonable (reuse over reimplementation) but
+  wrong specifically because it coupled this domain's AGREEING-value
+  policy to a function's DISAGREEING-value semantics with nothing
+  enforcing the two stay in sync; independent review caught it and this
+  domain now owns a small, local, two-line tier table instead.
+- Leaving `lib/contracts/provenance.ts`'s false "M5 owns the revocation
+  registry" claim disclosed only in this ADR, rather than correcting the
+  frozen file itself (the "Correction — `provenance.ts`" section) —
+  rejected once authorized: a frozen contract stating a false fact as true
+  is worse than a narrow, reported reopening to fix it.
 - Building a general `affirm()` mechanism ahead of a real case that needs
   its own new-`id`-free semantics (Decision 5) — no real case in this
   corpus asks for it; the one real "restate the same fact" scenario is

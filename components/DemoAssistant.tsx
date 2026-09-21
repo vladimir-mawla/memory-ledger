@@ -8,6 +8,7 @@ import {
   DEFAULT_SCOPE,
   EMPTY_STORE,
   SUBJECT,
+  derivedInference,
   humanAvowal,
   query,
   recordFact,
@@ -36,26 +37,54 @@ import { button, card, errorText, label, muted, smallInput, textInput } from "./
  * `__tests__/`, turns up nothing) — every call below runs entirely in this
  * tab.
  *
- * WHY THE ADDRESS/CONFIDENCE FIELDS ARE NOT ALL FREELY EDITABLE — a real
- * scope decision, not an oversight. §8's scenario is specifically the
- * `superseded` case (two same-tier `direct-avowal` memories, the newer at
- * or above the older&rsquo;s recorded confidence — ADR 0003&rsquo;s worked
- * contrast). Exposing a confidence slider would let a viewer accidentally
- * reroute the engine into `disputed` mid-demo, which is a real, different,
- * also-true behavior of this engine, but not the one milestone this build
- * exists to make legible. So confidence is fixed at 0.9 for both messages
- * and both sources are `humanAvowal` (direct first-person statements) —
- * matching `scripts/demo-memory.ts`&rsquo;s own corpus exactly. What stays
- * genuinely live and editable: the wording of both messages, the
- * structured address each one asserts, and the question asked — enough to
- * prove this is not a fixture, without inviting a case this milestone was
- * never asked to demo.
+ * WHY THE ADDRESS/CONFIDENCE FIELDS ARE NOT ALL FREELY EDITABLE, BUT THE
+ * SECOND MESSAGE&rsquo;S SOURCE KIND IS — a deliberate line, not an
+ * oversight, redrawn once on review. §8&rsquo;s scenario is specifically
+ * the `superseded` case (two same-tier `direct-avowal` memories — ADR
+ * 0003&rsquo;s worked contrast), and that stays the DEFAULT, reached with
+ * zero interaction. But §2&rsquo;s whole argument for why this project is
+ * not RAG rests on THREE of `BeliefAnswer`&rsquo;s four variants being
+ * things a similarity ranker structurally cannot produce — `doubted`,
+ * `disputed`, and a reasoned `unknown` — and a demo that only ever reaches
+ * `believed` shows the one variant retrieval CAN produce, leaving the rest
+ * of §2&rsquo;s argument as prose nobody can click on. So exactly one more
+ * control exists: &ldquo;how did the assistant learn this?&rdquo; for the
+ * SECOND message, `direct` (default) or `derived`. That one control
+ * changes ONE FIELD of the real `FactInput` handed to the real
+ * `recordFact()` — `source: humanAvowal(...) | derivedInference(...)` — and
+ * the real, frozen `resolveTierSplit` (`lib/contradiction/tier-split.ts`)
+ * decides the rest: an older `direct-avowal` contradicted by a newer
+ * `derived-inference` is tier-case 4, `disputed`, unconditionally. This
+ * component contains no `if (derived) show disputed` anywhere — see
+ * `handleSendNew`, below, which only ever changes the `source` argument,
+ * never branches on an expected outcome. A confidence SLIDER was
+ * considered and rejected: `Memory.confidence` plays no role in
+ * `resolveTierSplit`&rsquo;s decision at all (that file&rsquo;s own
+ * header), so a slider would invite a viewer to fiddle with a number that
+ * cannot change the outcome, which is worse than not offering it.
  */
 
 const DEFAULT_OLD_UTTERANCE = "My shipping address is 42 Elm Street, Portland.";
 const DEFAULT_NEW_UTTERANCE = "I moved — my new address is 118 Birch Avenue, Seattle.";
 const DEFAULT_QUERY = "What's my shipping address?";
-const FACT_CONFIDENCE = 0.9;
+
+/** The first message is always a direct avowal, at this codebase's own standard confidence for one (`scripts/demo-memory.ts`'s own corpus uses the same 0.9). */
+const OLD_CONFIDENCE = 0.9;
+
+type SourceKind = "direct" | "derived";
+
+/**
+ * The second message's confidence follows its source kind, not a separate
+ * control — 0.9 for a direct avowal (unchanged from §8's default path),
+ * 0.6 for a derived inference, matching the real values
+ * `scripts/demo-memory.ts`'s own corpus uses for its calendar/contacts
+ * integration guesses. Recorded ONLY for realism: per `tier-split.ts`'s own
+ * header, `Memory.confidence` plays no role in `superseded`-vs-`disputed`
+ * at all — only `source.tier` does.
+ */
+function newConfidenceFor(kind: SourceKind): number {
+  return kind === "direct" ? 0.9 : 0.6;
+}
 
 interface AddressFields {
   readonly line1: string;
@@ -83,6 +112,9 @@ export function DemoAssistant(): JSX.Element {
   const [newUtterance, setNewUtterance] = useState(DEFAULT_NEW_UTTERANCE);
   const [newAddress, setNewAddress] = useState<AddressFields>({ line1: "118 Birch Avenue", city: "Seattle", state: "WA" });
   const [sentNewUtterance, setSentNewUtterance] = useState<string | null>(null);
+  // Default "direct" lands on §8's own headline path with zero interaction
+  // — see this file's header for why "derived" exists at all.
+  const [newSourceKind, setNewSourceKind] = useState<SourceKind>("direct");
 
   const [queryText, setQueryText] = useState(DEFAULT_QUERY);
   const [askedQueryText, setAskedQueryText] = useState<string | null>(null);
@@ -120,7 +152,7 @@ export function DemoAssistant(): JSX.Element {
         value: { line1: oldAddress.line1, city: oldAddress.city, state: oldAddress.state },
         source: humanAvowal(SUBJECT),
         believedAtRaw: now,
-        confidenceRaw: FACT_CONFIDENCE,
+        confidenceRaw: OLD_CONFIDENCE,
         utterance: oldUtterance,
       },
       now,
@@ -137,14 +169,20 @@ export function DemoAssistant(): JSX.Element {
   function handleSendNew(): void {
     setError(null);
     const now = nextNow();
+    // The ONLY place `newSourceKind` is read: it picks which real
+    // `Provenance` constructor to call. Everything past this line is the
+    // same `recordFact()` call regardless of which one was chosen — the
+    // engine, not this component, decides whether that makes the write
+    // `superseded` or `disputed`. See this file's header.
+    const source = newSourceKind === "direct" ? humanAvowal(SUBJECT) : derivedInference(SUBJECT);
     const outcome = recordFact(
       store,
       {
         predicate: "shipping-address",
         value: { line1: newAddress.line1, city: newAddress.city, state: newAddress.state },
-        source: humanAvowal(SUBJECT),
+        source,
         believedAtRaw: now,
-        confidenceRaw: FACT_CONFIDENCE,
+        confidenceRaw: newConfidenceFor(newSourceKind),
         utterance: newUtterance,
       },
       now,
@@ -182,6 +220,7 @@ export function DemoAssistant(): JSX.Element {
     setOldAddress({ line1: "42 Elm Street", city: "Portland", state: "OR" });
     setNewUtterance(DEFAULT_NEW_UTTERANCE);
     setNewAddress({ line1: "118 Birch Avenue", city: "Seattle", state: "WA" });
+    setNewSourceKind("direct");
     setQueryText(DEFAULT_QUERY);
   }
 
@@ -239,7 +278,7 @@ export function DemoAssistant(): JSX.Element {
           ) : (
             <p style={muted}>
               ✓ Recorded — <code>shipping-address</code> = {oldAddress.line1}, {oldAddress.city}, {oldAddress.state} (confidence{" "}
-              {FACT_CONFIDENCE.toFixed(3)}, tier direct-avowal, status &ldquo;believed&rdquo; — a label assigned at
+              {OLD_CONFIDENCE.toFixed(3)}, tier direct-avowal, status &ldquo;believed&rdquo; — a label assigned at
               creation, not read by any engine below to decide anything).
             </p>
           )}
@@ -258,6 +297,29 @@ export function DemoAssistant(): JSX.Element {
           disabled={step < 1 || step >= 2}
           onChange={(e) => setNewUtterance(e.target.value)}
         />
+        <fieldset style={{ border: "none", padding: 0, margin: "0 0 0.5rem" }}>
+          <legend style={label}>How did the assistant learn this? (defaults to the §8 scenario)</legend>
+          <label style={{ display: "block", marginBottom: "0.25rem" }}>
+            <input
+              type="radio"
+              name="new-source-kind"
+              checked={newSourceKind === "direct"}
+              disabled={step < 1 || step >= 2}
+              onChange={() => setNewSourceKind("direct")}
+            />{" "}
+            You told it directly
+          </label>
+          <label style={{ display: "block" }}>
+            <input
+              type="radio"
+              name="new-source-kind"
+              checked={newSourceKind === "derived"}
+              disabled={step < 1 || step >= 2}
+              onChange={() => setNewSourceKind("derived")}
+            />{" "}
+            It was inferred — e.g. parsed from an email, not stated directly
+          </label>
+        </fieldset>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: "0.5rem" }}>
           <input
             style={smallInput}
@@ -297,7 +359,14 @@ export function DemoAssistant(): JSX.Element {
                   <code>{oldMemory.tombstone.supersededBy}</code>.
                 </>
               ) : (
-                "no contradiction was detected against the first message (its wording or values may not disagree)."
+                // NOT "no contradiction was detected" — that would overclaim.
+                // recordFact()'s own eager pass (store.ts) only ever
+                // tombstones on a "superseded" or tier-upgraded "no-conflict"
+                // outcome; a real, live "disputed" contradiction leaves BOTH
+                // memories live and produces no tombstone at all until
+                // queryBelief() resolves it — so "nothing was tombstoned yet"
+                // is not evidence that nothing disagrees.
+                "how this resolves against the first message isn't decided yet — ask below to see."
               )}
             </p>
           )}
@@ -329,9 +398,10 @@ export function DemoAssistant(): JSX.Element {
           <BaselinePanel
             queryText={askedQueryText}
             oldText={sentOldUtterance}
-            oldLabel="Old address (no longer current)"
+            oldLabel="Old address"
             newText={sentNewUtterance}
-            newLabel="New address (current)"
+            newLabel="New address"
+            ledgerStatus={answer.status}
           />
         </div>
       ) : null}

@@ -15,10 +15,14 @@ import { card, mono, muted } from "./styles.js";
  * `switch` below (with `assertNeverBeliefAnswer` in the default arm)
  * mirrors `scripts/demo-memory.ts`'s own `printAnswer`, not a new
  * convention invented for this component: every one of `BeliefAnswer`'s
- * four variants is handled by name, because in the live UI a viewer could
- * in principle reach any of them (an edited query, a re-sent message with
- * different confidence) even though the scripted §8 flow only ever
- * produces `"believed"`.
+ * four variants is handled by name, because a viewer can genuinely reach
+ * more than one of them from this same page — the default §8 path always
+ * lands on `"believed"`, but `DemoAssistant`'s own second-message source
+ * toggle ("you told it directly" / "it was inferred") is real input to the
+ * real `recordFact()`, and a `derived` second message against the
+ * `direct-avowal` first one makes the real, unmodified `resolveTierSplit`
+ * (`lib/contradiction/tier-split.ts`) return `"disputed"` instead — never a
+ * UI branch deciding that outcome.
  *
  * `Memory.status` DISCLAIMER — ADR 0005's own forward note for this
  * milestone: "a UI or documentation author reading a `Memory` value
@@ -71,10 +75,34 @@ function AnswerBody({ answer }: { readonly answer: BeliefAnswer<ShippingAddress>
       );
     case "disputed":
       return (
-        <p>
-          <strong>Disputed</strong> — two live candidates disagree and neither won mechanically:{" "}
-          {answer.candidates.map((m) => formatAddress(m.value)).join(" vs. ")}.
-        </p>
+        <>
+          <p>
+            <strong>Disputed:</strong> two live candidates disagree, and neither has a mechanical basis to
+            win — so the ledger reports both rather than guessing:
+          </p>
+          <ul>
+            {answer.candidates.map((m) => (
+              <li key={m.id}>
+                {formatAddress(m.value)} — tier <code style={mono}>{m.source.tier}</code>, confidence{" "}
+                <code style={mono}>{m.confidence.toFixed(3)}</code>, believed at{" "}
+                <code style={mono}>{m.believedAt}</code>
+              </li>
+            ))}
+          </ul>
+          <p style={muted}>
+            This is the system working, not an error state: nothing here was tombstoned, because tombstoning
+            would mean picking a winner it has no mechanical basis to pick — see{" "}
+            <code style={mono}>lib/contradiction/tier-split.ts</code>. One honest limit, disclosed rather than
+            hidden (ADR 0004, Decision 2a): this exact answer shape is also what a genuinely NOT-comparable
+            pair (mismatched scope, a same-instant tie) would produce — the frozen <code style={mono}>
+            BeliefAnswer
+            </code>{" "}
+            type has no separate field to tell the two apart. In THIS demo specifically that collapse never
+            applies — the subject, predicate, scope, and message ordering are fixed by construction, so
+            reaching &ldquo;disputed&rdquo; here always means a genuine value disagreement — but a reader of
+            any other &ldquo;disputed&rdquo; answer from this engine should know the distinction can be lost.
+          </p>
+        </>
       );
     case "unknown":
       return (

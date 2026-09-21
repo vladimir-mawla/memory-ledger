@@ -1,4 +1,5 @@
 import { useMemo, type JSX } from "react";
+import type { BeliefAnswer } from "../lib/contracts/belief-answer.js";
 import { rankBySimilarity } from "../domains/personal-assistant/index.js";
 import { card, mono, muted } from "./styles.js";
 
@@ -28,6 +29,17 @@ import { card, mono, muted } from "./styles.js";
  * whole point being demonstrated: it always returns a ranking, on any
  * corpus, with no way to say "I don&rsquo;t currently believe either of
  * these."
+ *
+ * `ledgerStatus` — the ONE thing this panel reads from the real engine's
+ * side, purely to decide which of two TRUE, pre-written sentences to show
+ * underneath the table (never to alter the ranking, the scores, or which
+ * row is marked "baseline's pick" — those come only from `rankBySimilarity`
+ * above). When `DemoAssistant`'s second-message toggle produces `disputed`
+ * instead of `believed`, the contrast sharpens: the real ledger just
+ * reported it has NO mechanical basis to prefer either candidate, while
+ * this baseline — on the exact same two statements — still confidently
+ * returns one ranked "winner" regardless. A top-k ranker cannot represent
+ * "I don&rsquo;t know which one," even when that is the honest answer.
  */
 export function BaselinePanel({
   queryText,
@@ -35,12 +47,14 @@ export function BaselinePanel({
   oldLabel,
   newText,
   newLabel,
+  ledgerStatus,
 }: {
   readonly queryText: string;
   readonly oldText: string;
   readonly oldLabel: string;
   readonly newText: string;
   readonly newLabel: string;
+  readonly ledgerStatus: BeliefAnswer["status"];
 }): JSX.Element {
   const ranked = useMemo(
     () =>
@@ -90,9 +104,19 @@ export function BaselinePanel({
       {top ? (
         <p style={{ marginTop: "0.75rem" }}>
           <strong>Baseline&rsquo;s answer:</strong> {top.id === "old" ? oldLabel : newLabel} — ranked higher
-          purely because its wording is textually closer to the question&rsquo;s own phrasing, regardless of
-          which statement is actually still true. It has no mechanism for &ldquo;this was superseded&rdquo; at
-          all — it only ever ranks, never refuses.
+          purely because its wording is textually closer to the question&rsquo;s own phrasing: a fact about the
+          words, not about which statement the real engine currently treats as current. It has no mechanism
+          for &ldquo;this was superseded&rdquo; at all — it only ever ranks, never refuses.
+        </p>
+      ) : null}
+      {ledgerStatus === "disputed" ? (
+        <p style={{ marginTop: "0.75rem" }}>
+          <strong>Notice what this baseline just did:</strong> the real ledger, on this exact pair, just
+          reported it has no mechanical basis to prefer either candidate — see the panel on the left. This
+          baseline has no such option. It always ranks, and always hands back exactly one &ldquo;winner,&rdquo;
+          even here, where the honest answer is that neither candidate should be preferred. That is not a
+          missing feature this baseline forgot to add — a plain similarity ranking has no way to represent
+          &ldquo;I don&rsquo;t know which one&rdquo; at all.
         </p>
       ) : null}
     </div>

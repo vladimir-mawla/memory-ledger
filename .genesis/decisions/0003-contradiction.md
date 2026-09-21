@@ -61,7 +61,7 @@ sub-vocabulary nobody has a real case for yet.
 "the newer reading did not violate a declared floor" — a genuinely directional invariant (an odometer only
 increasing, a running total that never refunds), not "these two numbers happen to be close." A violation
 (the newer value went backward) is treated as a REAL disagreement, falling through to the same
-`superseded`/`disputed` confidence-tier split (Decision 3 below) as any other value conflict — it is not a
+`superseded`/`disputed` tier split (Decision 6 below) as any other value conflict — it is not a
 separate "invalid data" outcome, because the data is perfectly well-typed; it is the CLAIM that conflicts.
 
 **`compareValues` never throws.** A malformed comparator (a negative/non-finite `epsilon`, an empty `in`
@@ -153,26 +153,76 @@ the same calendar authority `captured-at.ts`'s own `parseCapturedAt`/`ageOf` alr
 strings. `__tests__/contradict.test.ts` proves this directly with a same-real-instant-class pair at
 differing UTC offsets that a naive string comparison would misorder.
 
-## Decision 6 — `contradict` COMPARES `Memory.confidence` DIRECTLY, closing M1's own ADR forward note on `Provenance.tier`
+## Decision 6 — `contradict` COMPARES `Provenance.tier` DIRECTLY (not `Memory.confidence`), closing M1's own ADR forward note the RIGHT way — REVISED after independent review
 
-`.genesis/decisions/0001-contracts.md`, Decision 1, left `Provenance.tier`'s mapping to a numeric
-confidence explicitly unresolved: "Whoever needs it first should decide it with a real case in hand... and
-record that decision in its own ADR." M4 is that caller. `memory-plan.md` §5.1 itself states the mechanism
-is "a plain numeric comparison" — and `ConfidenceTier` (`"direct-avowal" | "derived-inference"`) has no
-numeric ordering of its own; only `Memory.confidence` (the recorded, immutable `[0,1]` field) does.
-`contradict` therefore reads `newer.confidence >= older.confidence` DIRECTLY. `tier`'s role, per §5.1's own
-text, is to explain WHY that recorded number is trustworthy and stable (fixed at creation by source kind
-and directness) — not to be re-derived by this function. Responsibility for assigning `confidence`
-consistently with `source.tier` belongs to whoever CONSTRUCTS a `Memory` (a future M6 domain adapter, or a
-test fixture) — exactly the responsibility M1's own ADR already placed on "whoever constructs a `Provenance`
-with a real case in front of them." Both halves of §5.1's worked contrast are proven directly in
-`__tests__/contradict.test.ts` using this exact mechanism.
+**This decision was wrong in this milestone's first pass, and is recorded here as revised, not silently
+corrected — the earlier reasoning was internally sound and still persuaded a careful reader toward the
+wrong rule, which is a worse failure than an unconvincing wrong answer.**
 
-**Alternative considered and rejected:** have M4 invent a `tierForKind`-style `ConfidenceTier → number`
-mapping to compare tiers instead of (or in addition to) `Memory.confidence`. Rejected for the same reason
-M1's own ADR rejected inventing it: no stated authority beyond one worked example, and a second, competing
-numeric source (tier-derived vs. recorded) for the exact same decision would be a worse design than reading
-the one field the plan's own text already calls "a plain numeric comparison."
+**The first-pass decision:** `.genesis/decisions/0001-contracts.md`, Decision 1, left `Provenance.tier`'s
+mapping to a numeric confidence explicitly unresolved: "Whoever needs it first should decide it with a real
+case in hand." Reasoning that `ConfidenceTier` (`"direct-avowal" | "derived-inference"`) "has no numeric
+ordering of its own," the first pass had `contradict` read `newer.confidence >= older.confidence` directly
+off `Memory.confidence` instead.
+
+**Why that was wrong, not merely a stylistic alternative:** a two-member union DOES have an obvious total
+order, and `PLAN.md`'s own M4 success criteria state the `superseded`/`disputed` rule directly in terms of
+the two TIER NAMES, never in terms of a numeric confidence value: "two same-tier `human` avowals... resolve
+to `superseded`... two same-tier `derived` inferences... resolve to `disputed`." The proof that exposed the
+error: two `direct-avowal` memories with wildly divergent recorded confidence (`0.9` and `0.1`) must still
+resolve to `superseded` under the plan's own worked example (a person restating a fact supersedes their own
+earlier statement, full stop) — and the confidence-number comparison gets this case wrong, resolving it to
+`disputed` instead. That gap was flagged, honestly, as this milestone's own "weakest point" in its first
+build report, framed as a documentation/discipline gap ("whoever constructs a `Memory` must assign
+`confidence` consistent with `tier`"). Independent review correctly reframed it: this was not a discipline
+gap to document, it was the WRONG MECHANISM to begin with.
+
+**Chosen (revised):** `contradict` calls `resolveTierSplit(older.source.tier, newer.source.tier)`
+(`tier-split.ts`) directly. `Memory.confidence` plays NO role in the `superseded`/`disputed` decision at
+all. The complete rule, four cases (see `tier-split.ts`'s own header for the full worked argument):
+
+1. `newer.tier` OUTRANKS `older.tier` (`derived-inference` → `direct-avowal`) → `superseded`.
+2. SAME tier, both `direct-avowal` → `superseded` (§5.1's worked example: a restated direct avowal
+   supersedes the earlier one).
+3. SAME tier, both `derived-inference` → `disputed` (§5.1's other worked example: two independent
+   inferences disagreeing is genuine uncertainty, not a restatement — neither wins).
+4. `newer.tier` is OUTRANKED BY `older.tier` (`direct-avowal` → `derived-inference`) → `disputed` (this is
+   §5.1's "a fresher-but-lower-confidence value must not auto-win," read correctly as a TIER statement: an
+   inference arriving after a direct avowal does not overturn it, no matter how confident the inference is
+   or how recent).
+
+**Cases 2 and 3 are deliberately asymmetric — the plan's own asymmetry, not an arbitrary choice made by
+this milestone.** A `direct-avowal` is a claim ABOUT ITSELF (the subject stating their own current state):
+a newer one is not really in "dispute" with an older one, it is simply an update, in the same way a
+person's own restated address is never ambiguous about which statement is current. A `derived-inference` is
+a claim ABOUT the subject FROM THE OUTSIDE (parsed, computed, OCR'd): two independent inferences disagreeing
+is genuine evidence of uncertainty in the world, not merely a restatement, so being "newer" does not entitle
+one inference to silently overrule the other. Treating both same-tier cases identically (both `superseded`,
+or both `disputed`) would have been the easier, more symmetric-looking rule to write — and would have
+contradicted the plan's own worked contrast, which explicitly gives the two cases opposite outcomes.
+
+**This closes the structural weakness this milestone's own first build report flagged, rather than merely
+documenting it.** `contradict`'s correctness for the `superseded`/`disputed` split no longer depends on
+whoever constructs a `Memory` having assigned `confidence` consistently with `source.tier` — there is no
+such dependency left to rely on. Proven directly, not merely asserted, in `__tests__/contradict.test.ts`:
+two `direct-avowal` memories with confidence `0.9` (older, losing) and `0.1` (newer, winning) resolve to
+`superseded`; the same test with the confidence values swapped (or with any other pair) resolves identically
+— tier, not confidence, decides. `__tests__/tier-split.test.ts` proves `resolveTierSplit` in isolation
+against all four cases of the closed 2×2 tier space.
+
+**Alternatives considered and rejected:**
+
+- **The first-pass mechanism itself** (compare `Memory.confidence` directly) — superseded by the argument
+  above; kept in this ADR as a revision, not deleted, because the reasoning that led to it (and why it was
+  wrong) is itself useful record for whoever next touches this file.
+- **A `tierForKind`-style `SourceKind → ConfidenceTier` mapping.** Not needed here at all — `contradict`
+  never reads `Provenance.kind`, only `Provenance.tier`, which M1 already made a required, caller-supplied
+  field. This alternative would have solved a problem `contradict` doesn't have.
+- **Comparing BOTH tier and confidence** (tier as a first-pass filter, confidence as a tie-breaker within
+  the same tier). Rejected: the plan's own worked contrast gives a definite answer for each same-tier case
+  (`superseded` for direct-avowal, `disputed` for derived-inference) with no tie-breaking role left for
+  confidence to play — adding one would silently reintroduce the exact failure mode (a confidence number
+  deciding the case) this revision exists to remove.
 
 ## Finding 1 — `memory-plan.md` §5's own `not-comparable` sentence is ambiguous against `PLAN.md`'s M4 success criteria; `PLAN.md` is followed
 
@@ -190,11 +240,16 @@ genuine ambiguity in the plan text, not silently reconciled.
 ## Finding 2 — §5.1's `disputed` clause names a "freshness window" condition this milestone cannot honestly evaluate, and does not attempt to
 
 §5.1's own text: "`newer.confidence` is lower than `older`'s **and** `older` is still inside its own
-freshness window." The second conjunct requires evaluating a `DecayPolicy` against `now` — exactly
-`lib/decay/**` (M3), which this milestone's brief explicitly forbids importing, stubbing, or waiting for,
-and `contradict`'s own signature (`memory-plan.md`'s own outcome line: "`contradict(older, newer)`") never
-names a `now` parameter to compute it with. **`contradict` does not evaluate "freshness window" at all** —
-it treats that conjunct as a PRECONDITION owned by `contradict`'s eventual caller (M5's `lib/store/**`,
+freshness window." The FIRST conjunct is superseded entirely by Decision 6's revision above (the split is
+now decided on tier, not on a confidence comparison, so this half of the plan's literal sentence no longer
+describes the actual mechanism — see Decision 6 for why the plan's own worked examples support the tier
+reading). The SECOND conjunct — "older is still inside its own freshness window" — requires evaluating a
+`DecayPolicy` against `now`: exactly `lib/decay/**` (M3), which this milestone's brief explicitly forbids
+importing, stubbing, or waiting for, and `contradict`'s own signature (`memory-plan.md`'s own outcome line:
+"`contradict(older, newer)`") never names a `now` parameter to compute it with. **This freshness half of
+§5.1's condition is DELIBERATELY UNIMPLEMENTED AT THIS LAYER — a stated scope boundary, not an oversight
+and not something this milestone forgot to get to.** `contradict` treats that conjunct as a PRECONDITION
+owned by `contradict`'s eventual caller (M5's `lib/store/**`,
 which will have both `now` and `lib/decay/**`), not as something recomputed internally. In practice: a
 store is expected to call `contradict` only for `older` memories that are still LIVE (a memory already
 decayed past `DecayPolicy.forgetFloor` would already have been `forget(..., "age-exceeded", now)`'d by
@@ -217,13 +272,17 @@ guessed at.
   sub-vocabulary nobody has a concrete case for.
 - Positive: `contradict`'s `believedAt` ordering check both closes a genuine string-vs-numeric-timestamp
   comparison bug class AND gives the symmetry/tie ADR questions one mechanism, not two ad hoc rules.
-- Positive: Decision 6 closes M1's own explicitly-left-open forward note with a real case in hand, exactly
-  as that ADR asked for.
-- Negative / cost: `contradict` places a real, undocumented-in-the-type-system burden on `Memory`
-  construction — `confidence` must be assigned consistent with `source.tier` by whoever builds a `Memory`,
-  and nothing in `lib/contracts` or `lib/contradiction` enforces that consistency structurally. Accepted:
-  enforcing it here would require exactly the `tierForKind` mapping M1's own ADR declined to guess at.
-- Negative / cost, disclosed as this milestone's own weakest point (see the build report): Finding 2 means
+- Positive: Decision 6 (as revised) closes M1's own explicitly-left-open forward note with a real case in
+  hand, exactly as that ADR asked for — and closes it on the vocabulary the plan's own success criteria
+  actually use (tier names), not a numeric proxy for them.
+- Positive, closing what was flagged as this milestone's own weakest point in its first build report:
+  because the `superseded`/`disputed` split now reads `source.tier` directly, `contradict`'s correctness
+  no longer depends on whoever constructs a `Memory` having assigned `confidence` consistently with
+  `source.tier` — that dependency is GONE, not merely documented as a risk. `__tests__/contradict.test.ts`
+  proves this directly with two `direct-avowal` memories at wildly divergent recorded confidence (`0.9`
+  and `0.1`) still resolving to `superseded`, which is exactly the case the first-pass (confidence-based)
+  mechanism got wrong.
+- Negative / cost, disclosed as this milestone's own weakest point now (see the build report): Finding 2 means
   `contradict`'s `disputed` outcome is, strictly, a narrower rule than §5.1's own prose describes — it is
   correct whenever its "older is still live" precondition holds, and this milestone has no way to verify
   that precondition from inside `lib/contradiction/**` alone.
@@ -247,8 +306,15 @@ guessed at.
   absorb a caller's argument-order mistake instead of surfacing it.
 - Breaking a genuine `believedAt` tie by comparing opaque `id`s (Decision 4) — arbitrary dressed up as
   deterministic.
-- Inventing a `ConfidenceTier → number` mapping for M4 to compare tiers instead of `Memory.confidence`
-  (Decision 6) — the same unauthorized-guess mistake M1's own ADR already declined to make.
+- Comparing `Memory.confidence` directly instead of `source.tier` (Decision 6, this milestone's OWN first
+  pass) — internally consistent reasoning that nonetheless produced a rule the plan's own success criteria
+  do not describe; revised after independent review found the proof case (`0.9` vs. `0.1`, same tier) it
+  got wrong.
+- A `SourceKind → ConfidenceTier` mapping (Decision 6) — solves a problem `contradict` doesn't have; it
+  only ever reads the already-required `Provenance.tier` field, never `Provenance.kind`.
+- Using confidence as a same-tier tie-breaker alongside tier (Decision 6) — the plan's own worked contrast
+  already gives a definite answer for each same-tier case; a tie-breaker would silently reintroduce the
+  exact confidence-decides failure mode the revision removes.
 - Silently reconciling §5's ambiguous `not-comparable`/`disputed` sentence in favor of either reading
   without recording the ambiguity (Finding 1).
 - Inventing a `now` parameter and a decay call inside `contradict` to evaluate §5.1's "freshness window"

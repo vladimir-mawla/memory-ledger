@@ -38,11 +38,10 @@ import type { Milliseconds } from "./captured-at.js";
  *
  * THE CHOSEN SHAPE: a closed, two-member discriminated union on `kind`.
  *
- *   - `"linear-to-floor"` — the common case: confidence degrades over time
+ *   - `"half-life"` — the common case: confidence degrades over time
  *     toward a configured floor. `halfLifeMs` names the CURVE'S PARAMETER,
- *     not the curve itself — M3's `lib/decay/**` (unbuilt, this
- *     milestone's job is only the shape) is the interpreter that actually
- *     computes a confidence value from `(policy, memory, now)`.
+ *     not the curve itself — `lib/decay/**` (M3) is the interpreter that
+ *     actually computes a confidence value from `(policy, memory, now)`.
  *     `doubtedThreshold` and `forgetFloor` are the two configured
  *     `Confidence` boundaries `memory-plan.md` §5.2 names: crossing the
  *     first flips a live query's status to `"doubted"`; crossing the
@@ -51,6 +50,19 @@ import type { Milliseconds } from "./captured-at.js";
  *     numbers, for the same reason every other confidence-shaped field in
  *     this directory is: a raw `0.3` cannot be assigned here without
  *     passing through `parseConfidence` first.
+ *
+ *     RENAMED BY M3 FROM ITS ORIGINAL `"linear-to-floor"`, RECORDED HERE
+ *     RATHER THAN LEFT A SILENT DIFF: M1 named this variant for what it
+ *     does in prose ("decays toward a floor") without committing to a
+ *     specific curve shape. Once M3 actually built the interpreter, the
+ *     ONLY curve `halfLifeMs` can honestly mean is exponential half-life
+ *     decay, not a straight line — "half-life" is exclusively an
+ *     exponential-decay term. Shipping a type whose discriminant permanently
+ *     misnamed its own only parameter was judged worse than a narrow,
+ *     doc-and-literal-only reopening of this frozen file to fix the name
+ *     before M5/M6/M8 read it. See `.genesis/decisions/0002-decay.md`
+ *     (M3's ADR) for the full argument and `.genesis/decisions/
+ *     0001-contracts.md`'s own Decision 4, amended with a pointer here.
  *   - `"never-decays"` — some memories don't lose confidence purely from
  *     the clock (a fact whose truth doesn't degrade with age, or a
  *     source-revocation-only claim). Still tombstonable via contradiction,
@@ -71,7 +83,7 @@ import type { Milliseconds } from "./captured-at.js";
  */
 export type DecayPolicy =
   | {
-      readonly kind: "linear-to-floor";
+      readonly kind: "half-life";
       readonly halfLifeMs: Milliseconds;
       readonly doubtedThreshold: Confidence;
       readonly forgetFloor: Confidence;

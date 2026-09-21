@@ -26,16 +26,16 @@ describe("effectiveConfidence — computed, query-facing, distinct from Memory.c
     expect(effectiveConfidence(live, FIXTURE_NOW)).toBe(ZERO_CONFIDENCE);
   });
 
-  it("for a live, clock-consistent memory, returns the recorded confidence UNCHANGED — this milestone's disclosed, honest limitation (no decay engine exists yet; see effective-confidence.ts's own header)", () => {
+  it("for a live, clock-consistent memory, returns the recorded confidence UNCHANGED — permanent, structural behavior at this layer (see effective-confidence.ts's own header): the real, elapsed-time-aware answer is composed one layer up, in lib/decay's queryConfidence, which this file cannot import without creating a circular dependency", () => {
     const live = fixtureMemory<string>({ lastAffirmedAt: FIXTURE_EARLIER, confidence: 0.7 as Confidence });
     expect(effectiveConfidence(live, FIXTURE_NOW)).toBe(live.confidence);
   });
 
-  it("DISCLOSED LIMITATION, ASSERTED DIRECTLY: the live branch does NOT vary with elapsed time yet — this assertion is expected to start FAILING the moment M3's real decay() replaces this branch, which is the point", () => {
+  it("PINNED, PERMANENT BEHAVIOR, ASSERTED DIRECTLY: the live branch does NOT vary with elapsed time, and never will at this layer — lib/decay/query-confidence.ts's own tests are what prove the real, composed answer DOES vary with elapsed time; this test pins the opposite fact about THIS function specifically, on purpose", () => {
     const live = fixtureMemory<string>({ lastAffirmedAt: FIXTURE_EARLIER, confidence: 0.7 as Confidence });
     const soonAfter = effectiveConfidence(live, FIXTURE_EARLIER);
     const monthsLater = effectiveConfidence(live, FIXTURE_NOW);
-    expect(soonAfter).toBe(monthsLater); // no decay applied — true today, false once M3 lands.
+    expect(soonAfter).toBe(monthsLater); // no decay applied at this layer — true permanently, by design, not a limitation awaiting a fix.
   });
 
   it("the distinction is structural, not just a naming convention: effectiveConfidence's parameter type accepts BOTH Memory and TombstonedMemory, while Memory.confidence is only ever the recorded field on the live half", () => {

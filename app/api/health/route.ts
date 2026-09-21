@@ -40,9 +40,17 @@ interface ContractsCheckResult {
  * Real work, not a liveness ping — adapted from shadow-run's and
  * decision-engine's own app/api/health/route.ts (both exercise a real
  * piece of their own lib/ on every request), scoped to what THIS project
- * has actually built by M2: only lib/contracts/** (M1) exists so far.
- * lib/decay, lib/contradiction, and lib/store are M3–M5 and do not exist
- * yet, so this check cannot (and must not pretend to) exercise them.
+ * has actually built: when this was written at M2, only lib/contracts/**
+ * (M1) existed. lib/decay (M3) has since merged; lib/contradiction (M4)
+ * and lib/store (M5) still do not exist, so this check cannot — and must
+ * not pretend to — exercise them.
+ *
+ * DELIBERATELY NOT UPDATED TO CALL lib/decay. This endpoint stays scoped
+ * to lib/contracts on purpose. Its job is to prove the frozen base layer
+ * is reachable and correct in the deployed process; widening it at each
+ * milestone would make it a second, drifting copy of the test suite. The
+ * one thing that DID change is assertion 1's framing below, which named a
+ * fix that turned out to be architecturally impossible.
  *
  * Exercises `effective-confidence.ts`'s own central, load-bearing claim —
  * the one its file header names as the thing a passing `npm test` alone
@@ -58,12 +66,19 @@ interface ContractsCheckResult {
  * still typechecks and passes locally:
  *
  *   1. The live, clock-consistent record reports its own recorded
- *      confidence (0.9) UNCHANGED — the disclosed limitation
- *      effective-confidence.ts's own header names ("decay() does not
- *      exist yet"; M3 replaces only this branch). If this ever returns
- *      something other than the recorded value without M3's decay()
- *      being wired in, that disclosed limitation has silently become a
- *      different, unreviewed behavior.
+ *      confidence (0.9) UNCHANGED. This was written as a DISCLOSED
+ *      LIMITATION awaiting M3 — "decay() does not exist yet; M3 replaces
+ *      only this branch" — and that turned out to be wrong. M3 could not
+ *      replace this branch: lib/decay imports lib/contracts, so having
+ *      lib/contracts call decay() would be a circular dependency and
+ *      would invert the base layer. So this is not a stub waiting to be
+ *      finished; it is the complete and correct answer AT THIS LAYER,
+ *      which knows nothing about decay policies. The composed,
+ *      decay-aware answer lives one layer up, in lib/decay's
+ *      queryConfidence() — that is what a caller who needs the real
+ *      current confidence should use, and what M5's store will call.
+ *      If this branch ever returns something other than the recorded
+ *      value, that is a regression, not the arrival of decay.
  *   2. The TOMBSTONED record — same 0.9 stored confidence — reports
  *      ZERO_CONFIDENCE. This is the check that would actually catch a
  *      real regression: if a future edit replaced the type-level
@@ -74,8 +89,8 @@ interface ContractsCheckResult {
  *   3. A live record whose `lastAffirmedAt` sits AFTER the `now` handed to
  *      `effectiveConfidence` (a clock-inconsistent pair, not merely an old
  *      timestamp) also reports ZERO_CONFIDENCE — the fail-closed rule
- *      §5.2 specifies for M3's real decay(), already true of this
- *      milestone's honest partial implementation.
+ *      §5.2 specifies, which M3's real decay() also independently
+ *      implements at its own layer.
  *
  * If any of the three fails — or anything here throws — this reports
  * failure; it never lets an exception escape past the health endpoint.

@@ -51,30 +51,43 @@ import { ageOf, type CapturedAt } from "./captured-at.js";
  *     a fabricated `confidence: 1`." Zero is the correct "most doubted"
  *     value this milestone can commit to now, and M3 inherits, not
  *     replaces, this branch.
- *   - live, clock-consistent → returns `record.confidence` UNCHANGED.
- *     This is the one HONEST, DISCLOSED LIMITATION of this milestone:
- *     `memory-plan.md` §3 specifies this branch as `decay(memory,
- *     now).confidence`, and `decay()` is M3's `lib/decay/**` — a later,
- *     still-unbuilt milestone this one must not encroach on. Returning
- *     the recorded confidence unmodified is not a fake placeholder
- *     pretending to be decay: it is the mathematically exact value decay
- *     would report at zero elapsed decay for any monotonically-decreasing
- *     curve, and it never overstates freshness beyond what is actually
- *     recorded. M3 replaces ONLY this final `return` with a real call to
- *     `decay(record, now).confidence`; the tombstoned-zero and clock-
- *     inconsistency branches above are already correct under §3/§7's own
- *     rules and should not need to change when M3 lands.
+ *   - live, clock-consistent → returns `record.confidence` UNCHANGED. THIS
+ *     IS NOW PERMANENT, STRUCTURAL BEHAVIOR — NOT A LIMITATION AWAITING A
+ *     LATER FIX. M1's own ADR (`.genesis/decisions/0001-contracts.md`,
+ *     Decision 6) and an earlier revision of this comment both said M3
+ *     would "replace ONLY this final `return` with a real call to
+ *     `decay(record, now).confidence`." M3's own build found that
+ *     instruction UNSATISFIABLE without creating a real circular
+ *     dependency: `lib/decay/**` necessarily imports FROM `lib/contracts`
+ *     (`Memory`, `TombstonedMemory`, `Confidence`, `CapturedAt`, `Json` —
+ *     there is no version of a decay interpreter that doesn't need these),
+ *     so `lib/contracts` importing `decay` FROM `lib/decay` back would
+ *     make the two directories depend on each other, and would invert this
+ *     project's own layering (`lib/contracts` is the frozen BASE every
+ *     later milestone builds on, never the reverse). See
+ *     `.genesis/decisions/0002-decay.md` (M3's ADR) for the full ruling.
  *
- * This is flagged again in `.genesis/decisions/0001-contracts.md` and in
- * this milestone's own report as the weakest point a verifier should
- * attack first: nothing here PROVES decay is missing to a reader who
- * only skims the return type, and a test that only checks the tombstoned
- * and clock-inconsistent branches could look like full coverage without
- * ever exercising the (currently trivial) live branch's real limitation.
- * `__tests__/effective-confidence.test.ts` includes a test that names
- * this limitation directly, asserting the live branch does NOT vary with
- * elapsed time yet — a claim that must start failing the moment M3
- * lands, which is the point.
+ *     THE RESOLUTION IS ARCHITECTURAL, NOT A WIRING CHANGE: this function
+ *     stays exactly as written, and correctly answers everything
+ *     DECIDABLE AT THIS LAYER — tombstoned → zero, clock-inconsistent →
+ *     zero, otherwise the recorded value (the mathematically exact answer
+ *     at zero elapsed decay for any monotonically-decreasing curve, and
+ *     never an overstatement of what is actually recorded). It is a
+ *     COMPLETE answer for a layer that cannot see `lib/decay`, not a
+ *     partial one. THE COMPOSED, REAL-ELAPSED-TIME-AWARE ANSWER —
+ *     `decay(record, now).confidence` for a live record, `ZERO_CONFIDENCE`
+ *     for a tombstoned one — is `queryConfidence` in
+ *     `lib/decay/query-confidence.ts`, one layer up, which CAN see both
+ *     this file's types and the real decay interpreter at once. A caller
+ *     that wants the actual current belief (which is every real caller —
+ *     a future `BeliefQuery`, M5, included) should call `queryConfidence`,
+ *     not this function, directly.
+ *
+ * `__tests__/effective-confidence.test.ts` includes a test PINNING this
+ * live branch's now-permanent behavior (that it does not vary with
+ * elapsed time) — see that test's own comment, corrected alongside this
+ * header, for why it is a permanent structural guarantee about THIS
+ * LAYER rather than a limitation expected to start failing.
  */
 export function effectiveConfidence<TValue extends Json>(
   record: Memory<TValue> | TombstonedMemory<TValue>,

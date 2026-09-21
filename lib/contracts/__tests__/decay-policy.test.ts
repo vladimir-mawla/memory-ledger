@@ -4,14 +4,14 @@ import type { Milliseconds } from "../captured-at.js";
 import type { Confidence } from "../confidence.js";
 
 describe("DecayPolicy", () => {
-  it("linear-to-floor is constructible with all its required fields", () => {
+  it("half-life is constructible with all its required fields", () => {
     const policy: DecayPolicy = {
-      kind: "linear-to-floor",
+      kind: "half-life",
       halfLifeMs: (30 * 24 * 60 * 60 * 1000) as Milliseconds,
       doubtedThreshold: 0.5 as Confidence,
       forgetFloor: 0.1 as Confidence,
     };
-    expect(policy.kind).toBe("linear-to-floor");
+    expect(policy.kind).toBe("half-life");
   });
 
   it("never-decays is constructible with no decay parameters at all", () => {
@@ -19,10 +19,10 @@ describe("DecayPolicy", () => {
     expect(policy.kind).toBe("never-decays");
   });
 
-  it("TYPE-LEVEL: linear-to-floor missing forgetFloor does not compile", () => {
-    // @ts-expect-error — linear-to-floor requires forgetFloor; this object omits it.
+  it("TYPE-LEVEL: half-life missing forgetFloor does not compile", () => {
+    // @ts-expect-error — half-life requires forgetFloor; this object omits it.
     const bad: DecayPolicy = {
-      kind: "linear-to-floor",
+      kind: "half-life",
       halfLifeMs: 1000 as Milliseconds,
       doubtedThreshold: 0.5 as Confidence,
     };
@@ -37,7 +37,7 @@ describe("DecayPolicy", () => {
 
   it("TYPE-LEVEL: halfLifeMs must be a Milliseconds, not a bare number — a raw literal does not compile", () => {
     const bad: DecayPolicy = {
-      kind: "linear-to-floor",
+      kind: "half-life",
       // @ts-expect-error — halfLifeMs is branded Milliseconds; a bare number literal has not passed through parseMilliseconds-shaped validation.
       halfLifeMs: 1000,
       doubtedThreshold: 0.5 as Confidence,
@@ -49,7 +49,7 @@ describe("DecayPolicy", () => {
   it("is exhaustively matchable over exactly two kinds", () => {
     function describeKind(policy: DecayPolicy): string {
       switch (policy.kind) {
-        case "linear-to-floor":
+        case "half-life":
           return "decays";
         case "never-decays":
           return "static";

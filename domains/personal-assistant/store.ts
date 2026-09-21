@@ -116,7 +116,19 @@ const TIER_RANK: Readonly<Record<ConfidenceTier, number>> = {
   "direct-avowal": 1,
 };
 
-function newerSourceOutranks(olderTier: ConfidenceTier, newerTier: ConfidenceTier): boolean {
+/**
+ * Exported ONLY so `__tests__/tier-rank-agreement.test.ts` can prove this
+ * table has not drifted from `lib/contradiction`'s. Independent
+ * verification found that the two orderings were byte-identical but that
+ * NOTHING would catch them diverging — agreement held only because nobody
+ * had edited either file. Decoupling from `resolveTierSplit` was the right
+ * call (this judges AGREEING values, that one judges DISAGREEING ones, and
+ * borrowing it coupled this path to semantics it does not depend on), but
+ * two independent rankings of the same two-member enum is the cost, and an
+ * unguarded cost is the shape that becomes a silent bug three milestones
+ * later. Not part of this module's intended public surface.
+ */
+export function newerSourceOutranks(olderTier: ConfidenceTier, newerTier: ConfidenceTier): boolean {
   return TIER_RANK[newerTier] > TIER_RANK[olderTier];
 }
 

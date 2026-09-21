@@ -172,27 +172,41 @@ describe("app/milestones.ts agrees with .genesis/DONE.html", () => {
     expect(fromModule).toEqual(completedInDoneHtml());
   });
 
-  it("M2 is not claimed done in either place — it cannot be, until a real deployment answers its demo command", () => {
-    // A concrete regression case, not just the general invariant above:
-    // this is the exact drift the M2 milestone brief warns against — a
-    // building agent marking its own work done.
+  it("a milestone is only ever claimed done in BOTH sources or NEITHER — never one alone", () => {
+    // This replaces two earlier point-in-time assertions, and the reason is
+    // worth recording rather than quietly dropping.
     //
-    // WHY THIS TEST CHANGED SHAPE: it originally asserted that NEITHER M1
-    // nor M2 was done, which was true when M2's branch was cut. M1 has
-    // since passed independent verification and merged (PR #2), so that
-    // premise went stale and the test failed on merging `main` — the guard
-    // working exactly as intended, catching a point-in-time assertion that
-    // had become false.
+    // The first asserted "neither M1 nor M2 is done". True when M2's branch
+    // was cut; false once M1 passed verification and merged. The second
+    // asserted "M2 is not done", scoped deliberately to M2's own criterion
+    // (its demo command curls a REAL deployment, so finished code cannot
+    // satisfy it) and written to fail the moment that deployment existed.
+    // It then did exactly that: M2 deployed to
+    // memory-ledger-rosy.vercel.app, the demo command returned HTTP 200
+    // with main's real commit SHA, and the assertion fell over on cue.
     //
-    // It is now scoped to M2 alone, and to the property that is genuinely
-    // invariant for this milestone rather than to a snapshot of a moment:
-    // M2's demo command is `curl -sf $DEPLOY_URL/api/health` against a
-    // REAL deployment, so no amount of finished code can satisfy it. This
-    // assertion is expected to start failing the moment that deployment
-    // exists and M2 is legitimately marked done — which is the point.
-    const m2 = MILESTONES.find((m) => m.id === 2);
-    expect(m2?.status).not.toBe("done");
-    expect(completedInDoneHtml()).not.toContain(2);
+    // Both were doing their job. But a test that must be rewritten at every
+    // milestone is a maintenance cost disguised as a guard, and each rewrite
+    // is a chance to quietly weaken it to match whatever is currently true.
+    // So this is the permanent version of the property those two were
+    // reaching for: the drift that actually matters is one source claiming a
+    // milestone done while the other does not. That is checkable forever,
+    // for every milestone, and needs no edit when a milestone lands.
+    //
+    // It does NOT guard against both sources being flipped together by a
+    // building agent marking its own work done — nothing in a unit test can,
+    // since both files are writable in the same commit. That remains a
+    // process guarantee (independent L4 verification before any mark-done),
+    // not a mechanical one, and saying so here is more useful than implying
+    // this test covers it.
+    const doneInModule = new Set(MILESTONES.filter((m) => m.status === "done").map((m) => m.id));
+    const doneInHtml = new Set(completedInDoneHtml());
+    for (const m of MILESTONES) {
+      expect(
+        doneInModule.has(m.id),
+        `M${m.id}: milestones.ts says ${doneInModule.has(m.id) ? "done" : "not done"} but DONE.html says ${doneInHtml.has(m.id) ? "done" : "not done"}`,
+      ).toBe(doneInHtml.has(m.id));
+    }
   });
 });
 

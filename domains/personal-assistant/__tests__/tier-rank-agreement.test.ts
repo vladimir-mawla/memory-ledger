@@ -72,6 +72,35 @@ describe("the domain's tier ranking agrees with lib/contradiction's", () => {
     expect(resolveTierSplit("derived-inference", "derived-inference")).toBe("disputed");
   });
 
+  it("the domain actually REPORTS outranking for the one cross-tier pair where it must — not vacuously silent", () => {
+    // WHY THIS WAS ADDED, and why the two tests above were not enough.
+    //
+    // Both assertions above are IMPLICATIONS: "if the domain says newer
+    // outranks older, then lib/contradiction resolves that pair as
+    // superseded." A domain table that reported NOTHING as outranking
+    // anything would satisfy both of them vacuously and pass — the
+    // implication is trivially true when its premise is never met.
+    //
+    // Independent verification of M7 found the related overclaim: its
+    // Case 8 was credited in an ADR with covering the cross-tier ordering,
+    // and does not — both its memories are direct-avowal, and
+    // resolveTierSplit's same-tier branch is a hardcoded literal check
+    // that never reads a rank table at all. So the cross-tier ordering on
+    // the DOMAIN side was pinned nowhere: not by Case 8, and not by the
+    // two implications above.
+    //
+    // This pins it directly and positively. `derived-inference` is the
+    // lower tier and `direct-avowal` the higher, per the plan's own worked
+    // contrast (a person restating a fact outranks an inference drawn from
+    // an email). A table that inverted that, or flattened it, now fails
+    // here rather than passing silently.
+    expect(newerSourceOutranks("derived-inference", "direct-avowal")).toBe(true);
+    // And the reverse must NOT outrank — an inference arriving after a
+    // direct avowal does not overturn it. This is the half the plan calls
+    // "a fresher-but-lower-confidence value does not auto-win."
+    expect(newerSourceOutranks("direct-avowal", "derived-inference")).toBe(false);
+  });
+
   it("would fail if either ordering flipped — proven by inverting the domain's answer", () => {
     // A guard that cannot fail is not a guard. This asserts the invariant
     // is falsifiable: inverting the domain's verdict for the one strictly

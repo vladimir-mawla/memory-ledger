@@ -1,56 +1,84 @@
 # Process notes
 
 Reconstructed from primary sources only — `git log`, `gh pr list --state all`, `gh pr view N --json
-body,comments,reviews`, and the six ADRs under `.genesis/decisions/` — not from any prior summary, including
-whatever accompanied this milestone's own assignment. Where a figure below is a test count or a date, it is
-either the literal number a cited PR body reports, or a number this session produced itself by running the
-command named next to it; the two are not silently merged into one running tally, because reconciling
-several self-reported deltas after the fact is exactly the kind of arithmetic that produces a stale count in
-one place and a corrected one in another. `git show HEAD:` and `git log --all` were the sources of record for
-this document's own claims about the repository's own commit graph.
+number,title,headRefName,createdAt,mergedAt,body,comments,reviews`, and the six ADRs under
+`.genesis/decisions/` — not from any prior summary, including whatever accompanied this milestone's own
+assignment. Where a figure below is a test count or a date, it is either the literal number a cited PR body
+reports, or a number this session produced itself by running the command named next to it; the two are not
+silently merged into one running tally, because reconciling several self-reported deltas after the fact is
+exactly the kind of arithmetic that produces a stale count in one place and a corrected one in another. `git
+show HEAD:` and `git log --all` were the sources of record for this document's own claims about the
+repository's own commit graph.
+
+**A note on this revision.** An earlier version of this document built its timeline from `createdAt`
+mislabeled as "Merged (UTC)," which put several PRs in the wrong relative order and made at least one causal
+claim backwards (below). Every date and every ordering claim in this document has been re-pulled from
+`mergedAt` specifically and re-checked against it, not just the rows an external reviewer happened to name.
 
 **A methodological note on "independent verification," stated plainly rather than implied.** Every PR in
 this history was authored and merged from the same GitHub account (`vladimir-mawla`); `gh pr view N --json
-reviews` returns zero formal review objects for every PR checked (`2`, `8`, `10`, `12`, `16`, `17`). The
-"independent (L4) verification" this project's own PR bodies and ADRs describe — attacking a milestone's
-claims by reversing arguments, injecting offending code, removing `@ts-expect-error` directives, hand-
-recomputing numbers — happened as a distinct pass narrated inside the *next* PR's own body (typically a
-`mark-MN-done` PR), never as a separately-attributed GitHub review comment or approval. This document reports
-what those PR bodies claim about that process; it cannot independently confirm that a different actor, human
-or otherwise, actually ran it, only that the repository's own record consistently describes doing so before
-each `mark-*-done` merge.
+reviews` returns zero formal review objects for every one of the 17 PRs, checked directly for all of them,
+not a sample. The "independent (L4) verification" this project's own PR bodies and ADRs describe — attacking
+a milestone's claims by reversing arguments, injecting offending code, removing `@ts-expect-error` directives,
+hand-recomputing numbers — is *almost always* narrated inside the *next* PR's own body (typically a
+`mark-MN-done` PR), never as a separately-attributed GitHub review or approval. **PR #13 is the one exception,
+and it matters enough to have its own bullet below rather than being smoothed into "always the next PR":** it
+carries a real, substantive, non-bot *comment*, posted by the same account before the PR merged, narrating a
+revision made in response to "reviewer feedback." This document reports what PR bodies and this one comment
+claim about that process; it cannot independently confirm that a different actor, human or otherwise, ever
+reviewed anything — only that the repository's own record consistently describes a verification or feedback
+pass happening before each `mark-*-done` merge, and, once, inside the PR it revised.
 
-## Timeline, by merged PR (`gh pr list --state all`, 17 of 17 merged)
+## Timeline, by real merge time (`gh pr list --json number,title,headRefName,createdAt,mergedAt`, sorted on
+`mergedAt` — not `createdAt`, and not PR number)
 
-| PR | Merged (UTC) | Branch | What it did |
+| # | Merged (UTC) | Branch | What it did |
 |---|---|---|---|
-| #1 | 2026-09-20 17:11 | `m1-contracts` | M1 build: the four irreducible types, independently authored |
-| #2 | 2026-09-20 17:21 | `mark-m1-done` | M1 marked done after independent verification — 14 files / 99 tests |
-| #3 | 2026-09-20 17:31 | `m2-deploy` | M2 build: health endpoint, milestone-drift guard — 15 files / 124 tests |
-| #4 | 2026-09-21 21:34 | `mark-m2-done` | M2 marked done — real `curl` against the deployed URL, not the code alone |
-| #5 | 2026-09-21 21:40 | `m3-decay` | M3 build: the decay engine — 18 files / 201 tests |
-| #6 | 2026-09-21 21:46 | `m4-contradiction` | M4 build (first pass — see "What was rejected," below) |
-| #7 | 2026-09-21 22:01 | `fix-post-m3-stale-comments` | Two M3 findings closed: a degenerate policy, a stale comment |
-| #8 | 2026-09-21 22:05 | `mark-m4-done` | M4 marked done, **after being reworked following rejection** — 24 files / 316 tests |
-| #9 | 2026-09-21 22:25 | `m5-store` | M5 build: `forget()` + `queryBelief()` — 28 files / 395 tests |
-| #10 | 2026-09-21 22:43 | `mark-m5-done` | M5 marked done, **after one rejection over an uncommitted ADR** (below) |
-| #11 | 2026-09-21 23:11 | `m6-domain` | M6 build: personal-assistant domain — 34 files / 430 tests |
-| #12 | 2026-09-21 23:27 | `mark-m6-done` | M6 marked done; adds the tier-rank-agreement guard — 35 files / 434 tests |
-| #13 | 2026-09-21 23:39 | `m8-demo` | M8 build: the interactive demo — 35 files / 434 tests |
-| #14 | 2026-09-21 23:49 | `m7-failures` | M7 build: ten failure cases — 45 files / 467 tests |
-| #15 | 2026-09-21 23:58 | `fix-guard-vacuity` | Closes a vacuity hole in PR #12's own tier-rank-agreement guard |
-| #16 | 2026-09-22 00:08 | `mark-m8-done` | M8 marked done — driven by hand against the deployed URL |
-| #17 | 2026-09-22 00:19 | `mark-m7-done` | M7 marked done — 45 files / 470 tests |
+| #1 | 2026-09-20 17:20:27 | `m1-contracts` | M1 build: the four irreducible types, independently authored |
+| #2 | 2026-09-20 17:31:59 | `mark-m1-done` | M1 marked done after independent verification — 14 files / 99 tests |
+| #3 | 2026-09-21 17:30:13 | `m2-deploy` | M2 build: health endpoint, milestone-drift guard — 15 files / 124 tests |
+| #4 | 2026-09-21 21:42:36 | `mark-m2-done` | M2 marked done — real `curl` against the deployed URL, not the code alone |
+| #5 | 2026-09-21 21:57:53 | `m3-decay` | M3 build: the decay engine — 18 files / 201 tests |
+| #7 | 2026-09-21 22:02:45 | `fix-post-m3-stale-comments` | M3 marked done; two findings closed: a degenerate policy, a stale comment |
+| #6 | 2026-09-21 22:04:19 | `m4-contradiction` | M4 build (first pass rejected and reworked pre-merge — see below) |
+| #8 | 2026-09-21 22:26:39 | `mark-m4-done` | M4 marked done — 24 files / 316 tests |
+| #9 | 2026-09-21 22:42:39 | `m5-store` | M5 build: `forget()` + `queryBelief()` — 28 files / 395 tests |
+| #10 | 2026-09-21 23:14:02 | `mark-m5-done` | M5 marked done, **after one rejection over an uncommitted ADR** (below) |
+| #11 | 2026-09-21 23:25:57 | `m6-domain` | M6 build: personal-assistant domain — 34 files / 430 tests |
+| #12 | 2026-09-21 23:40:38 | `mark-m6-done` | M6 marked done; adds the tier-rank-agreement guard — 35 files / 434 tests |
+| #13 | 2026-09-21 23:56:43 | `m8-demo` | M8 build: the interactive demo — 35 files / 434 tests; revised via a same-PR comment (below) |
+| #15 | 2026-09-22 00:03:35 | `fix-guard-vacuity` | Closes a vacuity hole in PR #12's own tier-rank-agreement guard |
+| #14 | 2026-09-22 00:18:44 | `m7-failures` | M7 build: ten failure cases — 45 files / 467 tests |
+| #16 | 2026-09-22 00:18:49 | `mark-m8-done` | M8 marked done — driven by hand against the deployed URL |
+| #17 | 2026-09-22 00:20:32 | `mark-m7-done` | M7 marked done — 45 files / 470 tests |
 
-**Worth naming plainly rather than smoothing over: M8 was built, merged, and marked done (#13, #16) before M7
-was marked done (#17), even though M7 precedes M8 in the plan's own milestone numbering.** M7's own build
-(#14) merged after M8's build (#13) but before M8 was marked done; #15's guard fix and #17's mark-M7-done then
-landed last. The milestone *numbers* describe a dependency order the plan reasoned about in advance (M7's
-failure suite needs `domains/**` frozen, which M6 provides — it does not itself depend on M8); the merge
-timestamps describe the order work actually happened in, and the two are not the same thing. Nothing in this
-repository's own `DONE.html`/`app/milestones.ts` claims otherwise — both are keyed on milestone identity, not
-merge order — but a reader reconstructing history from PR numbers alone (`#13` before `#14`) rather than the
-table above would get M7/M8's relative build order backwards.
+**Two real orderings only `mergedAt` reveals, both worth naming rather than smoothing over.**
+
+**M3 was marked done (#7, 22:02:45) before M4's build (#6, 22:04:19) finished merging — 94 seconds apart.**
+This is not a contradiction: M4's own ADR (`.genesis/decisions/0003-contradiction.md`, Finding 2) is explicit
+that `lib/contradiction/**` depends only on `lib/contracts/**` (frozen at M1) and must not import
+`lib/decay/**` at all, so M4's build never needed M3 to be "done" — only for `lib/contracts` to stay frozen,
+which it already was. The two branches were simply in flight at the same time, and #7 happened to land first
+by a little over a minute.
+
+**M8 was built, merged, and marked done before M7 was marked done — but not in the shape "M8 finished, then
+M7 happened," and the order among the last five merges is its own small story.** By real `mergedAt`: M8's
+build (#13, 23:56:43) merged first; then a guard fix unrelated to M8 (#15, `fix-guard-vacuity`, 00:03:35);
+then M7's own build (#14, 00:18:44); then M8 marked done (#16), five seconds later at 00:18:49; then M7 marked
+done (#17) last, at 00:20:32. **`#15` merging before `#14` is not a mistake in the table — it is because the
+fix `#15` makes lives in `domains/personal-assistant/__tests__/`, outside `tests/failures/**`, the only
+directory M7's own build was allowed to touch** (`.genesis/decisions/0006-failure-suite.md`, Decision 3
+Finding 3 and Decision 6): a vacuity hole in M6's own tier-rank-agreement guard was *found* while M7's
+still-unmerged build was being checked, but the fix had to ship as its own PR against `main` rather than
+inside `m7-failures`. `git log --oneline --merges` on this repository confirms `m7-failures` merged
+`origin/main` into itself twice before finishing (`a56ddaa`, picking up #12; `48d5053`, picking up #15) — the
+branch had to catch up to a `main` that had moved twice while it was still open. So: M7 precedes M8 in the
+plan's own milestone numbering (a dependency order reasoned about in advance — M7 needs `domains/**` frozen,
+which M6 provides, and does not itself depend on M8); in real merge order, M8's build predates every M7-
+labeled merge in this cluster, M8 finished essentially concurrently with M7's build landing, and M7 was not
+marked done until after M8 was. Nothing in `DONE.html`/`app/milestones.ts` claims an order beyond milestone
+identity — but a reader going by PR *number* alone (`#14` before `#15`, `#16` before `#17`) would get both of
+these orderings backwards.
 
 Every PR's own stated file/test counts above are quoted from that PR's own body, not recomputed — see the
 methodological note above for why. The one number this session independently reproduced by running the
@@ -92,13 +120,33 @@ Two real distinctions matter here, and this project's own PR bodies are careful 
   gap in Case 10's absence scan (`const { status } = memory` walked straight through the original `\.status`-
   anchored pattern). Both are corrected in `.genesis/decisions/0006-failure-suite.md` itself, in place, not
   only noted in this document.
-- **Found and fixed same-day, cross-milestone (PR #15, `fix-guard-vacuity`):** chasing the Case 8 overclaim
-  above led M7's own build to find a real hole in a guard *it itself had added at M6* — PR #12's
-  `tier-rank-agreement.test.ts`. Its two original assertions were both implications ("if the domain says X,
-  then `lib/contradiction` says Y"), which a domain table reporting `false` for every input would satisfy
-  vacuously. Fixed by adding two positive assertions plus a direct falsifiability check (inverting the
-  domain's own answer and confirming the guard then fails). PR #15's own line: *"A guard that cannot fail is
-  not a guard."*
+- **Found during M7's build, shipped as its own PR because the fix lived outside M7's own freeze boundary
+  (PR #15, `fix-guard-vacuity`, merged *before* `m7-failures` itself finished merging — see the timeline
+  note above):** chasing the Case 8 overclaim above found a real hole in a guard added one milestone earlier,
+  at M6 — PR #12's `tier-rank-agreement.test.ts`. Its two original assertions were both implications ("if the
+  domain says X, then `lib/contradiction` says Y"), which a domain table reporting `false` for every input
+  would satisfy vacuously. The fix touches `domains/personal-assistant/__tests__/`, a directory `m7-failures`
+  (scoped to `tests/failures/**` only) was not allowed to modify, so it shipped as a separate PR straight
+  against `main`, adding two positive assertions plus a direct falsifiability check (inverting the domain's
+  own answer and confirming the guard then fails). PR #15's own line: *"A guard that cannot fail is not a
+  guard."* `m7-failures` then merged this fix back into itself (`main` into `m7-failures`, commit `48d5053`)
+  before its own PR (#14) finished.
+- **Revised inside its own PR, visible as a comment rather than a rewritten body (M8, PR #13) — the one real
+  exception to "verification lives in the next PR," and worth reading for what it actually records, not just
+  that it exists.** On 2026-09-21T23:47:47Z, nine minutes before PR #13 merged, the same account posted a
+  comment opening *"Addressed reviewer feedback: added a control that lets a viewer reach `disputed`, not
+  just `superseded`."* It describes a real, checked design change: a toggle on the demo's second message
+  ("You told it directly" / "It was inferred") that swaps exactly one field of the real `FactInput`
+  (`humanAvowal()` → `derivedInference()`), with `resolveTierSplit()` — untouched — deciding the rest; a
+  worked example (0.9 vs. 0.6 confidence, matching `scripts/demo-memory.ts`'s own corpus) producing a real
+  `"disputed"` answer with neither candidate tombstoned; `AnswerPanel` disclosing ADR 0004 Decision 2a's real
+  limit (`disputed` and not-comparable are indistinguishable in general, though unreachable from this demo's
+  own construction); and a genuine overclaim fixed in the same pass — step 2's copy previously read "no
+  contradiction was detected" whenever nothing was tombstoned yet, which is false on the disputed path, where
+  a real contradiction exists and simply resolves lazily at query time. This is the one place in this
+  repository's history where a feedback-driven revision is recorded as a comment distinct from the PR body it
+  revised, rather than folded silently into a rewritten body or deferred to the next `mark-*-done` PR — which
+  is itself evidence about how this project actually worked, not only about what `DemoAssistant.tsx` renders.
 
 ## The `Co-Authored-By` trailer, and why it is not read as evidence here
 
@@ -124,10 +172,19 @@ attribution — which model produced which milestone's code — is not recoverab
 this document does not attempt to infer one from indirect signals (commit timing, prose style, or the fixed
 `Co-Authored-By` trailer above).
 
-## What this document did not have a primary source for
+## What this document did and did not have a primary source for
 
-`gh pr view N --json comments` returned an empty comment list for every PR checked (Vercel's own deployment
-bot aside) — there is no separate PR-comment thread recording back-and-forth review discussion distinct from
-the PR bodies quoted above. This document's account of "what was rejected" and "what was revised" is
-therefore built entirely from what each PR's own body says about the PR before it, which is the only record
-this repository actually kept.
+`gh pr view N --json comments` was checked for all 17 PRs, not a sample. Sixteen of the seventeen carry
+exactly one comment each, and every one of those sixteen is the Vercel deployment bot's own automated status
+comment. **The exception is PR #13, which carries a second, substantive, non-bot comment from the same
+account** — quoted and used above, in "What was rejected, and what was merely revised." An earlier revision
+of this document claimed the comment list was empty everywhere "Vercel's bot aside," which was true for 16 of
+17 PRs and false for the one that actually mattered: PR #13 is discussed at length elsewhere in this document,
+and that discussion did not originally surface the one piece of real review evidence sitting on that exact
+PR. Corrected here, and incorporated where it belongs, not only disclosed as a gap.
+
+What remains genuinely true, checked the same way: `gh pr view N --json reviews` returns zero formal GitHub
+review objects (approvals, requested-changes, or review-level comments) for all 17 PRs. So the record this
+repository kept is PR bodies, one real PR comment (#13), and Vercel's own bot noise — never a separately-
+attributed reviewer identity, and never a formal review object. This document's account of "what was rejected"
+and "what was revised" is built from all of that, not from PR bodies alone.

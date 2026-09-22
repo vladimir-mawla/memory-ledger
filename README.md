@@ -67,12 +67,14 @@ npm run demo:memory   # scripts/demo-memory.ts — the §8 scenario end to end, 
 npm run dev            # then open http://localhost:3000 for the interactive version
 ```
 
-`npm run demo:memory` runs the full thirteen-step personal-assistant narrative from the command line: the
-shipping-address contradiction, small-talk decay to `unknown`, two integrations disputing a city, source
-revocation resolving that dispute as a side effect, the one real case in this system for `ForgetReason:
-"superseded"`, and a final account-deletion sweep — printing, at the end, `BeliefAnswer variants observed:
-believed, disputed, doubted, unknown` and exiting `0`. Every claim it prints is checked with `node:assert`
-against the real engine as it runs, not narrated.
+`npm run demo:memory` runs the full personal-assistant narrative from the command line, printing **fourteen**
+`--- Step N: ... ---` headers (`Step 1` through `Step 14` — counted directly off a real run, not off the
+script's own internal comments, which use a different, coarser numbering, `Step 0` through `Step 12` with a
+few merged into ranges and one `Step 8.5`): the shipping-address contradiction, small-talk decay to
+`unknown`, two integrations disputing a city, source revocation resolving that dispute as a side effect, the
+one real case in this system for `ForgetReason: "superseded"`, and a final account-deletion sweep — printing,
+at the end, `BeliefAnswer variants observed: believed, disputed, doubted, unknown` and exiting `0`. Every
+claim it prints is checked with `node:assert` against the real engine as it runs, not narrated.
 
 ```bash
 curl -sf https://memory-ledger-rosy.vercel.app/api/health

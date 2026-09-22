@@ -115,6 +115,36 @@ import { join } from "node:path";
  * at full strength, not softened: destructuring was the ordinary case
  * this list should have named from the start, and reflection/renaming/
  * indirection remain genuinely exotic by comparison.
+ *
+ * AND ONE FALSE-POSITIVE RISK, IN THE OTHER DIRECTION, FOUND BY THE SAME
+ * VERIFICATION THAT FOUND THE DESTRUCTURING GAP. Broadening the match to
+ * `\bstatus\b` closed that gap but made this scan blind to CONTEXT: it
+ * reads the raw file text, so the literal phrase appearing inside a
+ * COMMENT or a string/template literal is flagged exactly as a real
+ * comparison would be. Reproduced live — a bare comment containing
+ * `status === "believed"`, with no executable code at all, fails this
+ * test and names a file that compares nothing.
+ *
+ * That is not hypothetical in THIS codebase. Every file here carries long
+ * explanatory headers, and this very paragraph would trip the scan if it
+ * spelled the phrase out rather than describing it. Nothing on `main`
+ * trips it today, so this is a latent brittleness rather than a live
+ * defect — but a guard that cries wolf on an ordinary comment is a guard
+ * the next engineer disables, which is a worse outcome than the gap it
+ * was broadened to close.
+ *
+ * DELIBERATELY NOT FIXED HERE, and the reason matters. The fix is to stop
+ * reading raw text and parse instead — exactly what this repo's
+ * architecture tests already do, via the real TypeScript compiler, after
+ * that approach survived three rejection rounds and seven bypasses on a
+ * sibling project. Reaching for a cleverer REGEX to strip comments and
+ * strings would be the precise mistake that history records: every one of
+ * those seven bypasses was a hand-rolled scanner with one more degree of
+ * freedom nobody had constrained. So the honest options are the parser or
+ * the disclosure, and for a single narrow absence claim already labelled
+ * a partial pin, the disclosure is proportionate. If this ever fires on a
+ * comment, do not narrow the regex — adopt the compiler-based scan the
+ * architecture tests already use.
  */
 
 const REPO_ROOT = join(import.meta.dirname, "..", "..");

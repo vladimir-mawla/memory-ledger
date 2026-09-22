@@ -77,9 +77,10 @@ then M7's own build (#14, 00:18:44); then M8 marked done (#16), five seconds lat
 done (#17) last, at 00:20:32.
 
 **On *why* `#15` merged before `#14`, stated at the strength the evidence actually supports, not more.** The
-two PRs' file scopes do not overlap — checked directly, just now: `gh pr diff 14 --name-only` touches only
-`.genesis/decisions/0006-failure-suite.md` and twelve files under `tests/failures/**`; `gh pr diff 15
---name-only` touches exactly one file, `domains/personal-assistant/__tests__/tier-rank-agreement.test.ts`. So
+two PRs' file scopes do not overlap — checked directly, just now: `gh pr diff 14 --name-only` touches twelve
+files — eleven under `tests/failures/**` plus its ADR, `.genesis/decisions/0006-failure-suite.md`; `gh pr diff
+15 --name-only` touches exactly one file, `domains/personal-assistant/__tests__/tier-rank-agreement.test.ts`.
+So
 `#15`'s fix could not have been carried inside `#14`'s own PR even if the intent was to bundle them — it lives
 outside the one directory `m7-failures` was scoped to touch. **That is the complete evidence this document can
 actually stand behind.** An earlier revision of this section additionally claimed `git log --oneline --merges`

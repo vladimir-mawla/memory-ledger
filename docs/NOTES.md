@@ -10,10 +10,19 @@ exactly the kind of arithmetic that produces a stale count in one place and a co
 show HEAD:` and `git log --all` were the sources of record for this document's own claims about the
 repository's own commit graph.
 
-**A note on this revision.** An earlier version of this document built its timeline from `createdAt`
-mislabeled as "Merged (UTC)," which put several PRs in the wrong relative order and made at least one causal
-claim backwards (below). Every date and every ordering claim in this document has been re-pulled from
-`mergedAt` specifically and re-checked against it, not just the rows an external reviewer happened to name.
+**A note on this revision, and the one before it.** The first version of this document built its timeline from
+`createdAt` mislabeled as "Merged (UTC)," which put several PRs in the wrong relative order and made at least
+one causal claim backwards. The fix for that round introduced two new defects of its own, both now corrected
+again, in this revision, against commands run fresh for this pass specifically: a citation of two commit
+hashes as evidence for why PR #15 merged before PR #14, which — checked again just now with `git fetch
+--prune origin` and `gh api repos/vladimir-mawla/memory-ledger/branches/m7-failures` (`404 Branch not
+found`) — describe history on a branch since deleted from the remote and are no longer independently
+checkable from this repository, so the citation is withdrawn rather than repeated; and a comment-count claim
+("sixteen of seventeen") that was arithmetic backed into from "everything except #13," not an actual count —
+the real split, counted just now with `gh pr view N --json comments` run against all 17 PRs individually, is
+three PRs with zero comments, thirteen with exactly one (the Vercel bot), and one (#13) with two. Every date,
+count, and ordering claim below has been re-derived against a command run in this session, for this revision —
+not carried forward from either earlier pass.
 
 **A methodological note on "independent verification," stated plainly rather than implied.** Every PR in
 this history was authored and merged from the same GitHub account (`vladimir-mawla`); `gh pr view N --json
@@ -65,20 +74,34 @@ by a little over a minute.
 M7 happened," and the order among the last five merges is its own small story.** By real `mergedAt`: M8's
 build (#13, 23:56:43) merged first; then a guard fix unrelated to M8 (#15, `fix-guard-vacuity`, 00:03:35);
 then M7's own build (#14, 00:18:44); then M8 marked done (#16), five seconds later at 00:18:49; then M7 marked
-done (#17) last, at 00:20:32. **`#15` merging before `#14` is not a mistake in the table — it is because the
-fix `#15` makes lives in `domains/personal-assistant/__tests__/`, outside `tests/failures/**`, the only
-directory M7's own build was allowed to touch** (`.genesis/decisions/0006-failure-suite.md`, Decision 3
-Finding 3 and Decision 6): a vacuity hole in M6's own tier-rank-agreement guard was *found* while M7's
-still-unmerged build was being checked, but the fix had to ship as its own PR against `main` rather than
-inside `m7-failures`. `git log --oneline --merges` on this repository confirms `m7-failures` merged
-`origin/main` into itself twice before finishing (`a56ddaa`, picking up #12; `48d5053`, picking up #15) — the
-branch had to catch up to a `main` that had moved twice while it was still open. So: M7 precedes M8 in the
-plan's own milestone numbering (a dependency order reasoned about in advance — M7 needs `domains/**` frozen,
-which M6 provides, and does not itself depend on M8); in real merge order, M8's build predates every M7-
-labeled merge in this cluster, M8 finished essentially concurrently with M7's build landing, and M7 was not
-marked done until after M8 was. Nothing in `DONE.html`/`app/milestones.ts` claims an order beyond milestone
-identity — but a reader going by PR *number* alone (`#14` before `#15`, `#16` before `#17`) would get both of
-these orderings backwards.
+done (#17) last, at 00:20:32.
+
+**On *why* `#15` merged before `#14`, stated at the strength the evidence actually supports, not more.** The
+two PRs' file scopes do not overlap — checked directly, just now: `gh pr diff 14 --name-only` touches only
+`.genesis/decisions/0006-failure-suite.md` and twelve files under `tests/failures/**`; `gh pr diff 15
+--name-only` touches exactly one file, `domains/personal-assistant/__tests__/tier-rank-agreement.test.ts`. So
+`#15`'s fix could not have been carried inside `#14`'s own PR even if the intent was to bundle them — it lives
+outside the one directory `m7-failures` was scoped to touch. **That is the complete evidence this document can
+actually stand behind.** An earlier revision of this section additionally claimed `git log --oneline --merges`
+showed two specific merge commits (cited by short hash) recording `m7-failures` catching up to a `main` that
+had moved while it was open, as the mechanism connecting the two PRs. Checked again, freshly, for this
+revision: `git fetch --prune origin` shows `origin/m7-failures` (along with several other now-merged branches)
+has since been deleted from the remote, and `gh api repos/vladimir-mawla/memory-ledger/branches/m7-failures`
+returns `404 Branch not found`. The two commits in question were real objects in this session's own local
+clone at the time — reachable then, because a stale local tracking ref for the now-deleted branch was still
+present — but they described history on a branch this repository no longer exposes, which makes citing them
+here worse than not citing them: a reader checking this document against the live repository, the way this
+document asks every other claim to be checked, would find nothing. **Withdrawn.** What actually caused `#15`
+to land first — a deliberate sequencing choice, a merge-conflict resolution order, or simple happenstance in
+which PR a human or agent clicked "merge" on first — is not recoverable from the repository as it stands today,
+and this document says so rather than reconstructing a plausible mechanism from history that has been deleted.
+
+So: M7 precedes M8 in the plan's own milestone numbering (a dependency order reasoned about in advance — M7
+needs `domains/**` frozen, which M6 provides, and does not itself depend on M8); in real merge order, M8's
+build predates every M7-labeled merge in this cluster, M8 was marked done (`#16`) five seconds *after* M7's own
+build (`#14`) merged, and M7 was not marked done until after M8 was. Nothing in `DONE.html`/`app/milestones.ts` claims an order
+beyond milestone identity — but a reader going by PR *number* alone (`#14` before `#15`, `#16` before `#17`)
+would get both of these orderings backwards.
 
 Every PR's own stated file/test counts above are quoted from that PR's own body, not recomputed — see the
 methodological note above for why. The one number this session independently reproduced by running the
@@ -120,17 +143,18 @@ Two real distinctions matter here, and this project's own PR bodies are careful 
   gap in Case 10's absence scan (`const { status } = memory` walked straight through the original `\.status`-
   anchored pattern). Both are corrected in `.genesis/decisions/0006-failure-suite.md` itself, in place, not
   only noted in this document.
-- **Found during M7's build, shipped as its own PR because the fix lived outside M7's own freeze boundary
-  (PR #15, `fix-guard-vacuity`, merged *before* `m7-failures` itself finished merging — see the timeline
-  note above):** chasing the Case 8 overclaim above found a real hole in a guard added one milestone earlier,
-  at M6 — PR #12's `tier-rank-agreement.test.ts`. Its two original assertions were both implications ("if the
-  domain says X, then `lib/contradiction` says Y"), which a domain table reporting `false` for every input
-  would satisfy vacuously. The fix touches `domains/personal-assistant/__tests__/`, a directory `m7-failures`
-  (scoped to `tests/failures/**` only) was not allowed to modify, so it shipped as a separate PR straight
-  against `main`, adding two positive assertions plus a direct falsifiability check (inverting the domain's
-  own answer and confirming the guard then fails). PR #15's own line: *"A guard that cannot fail is not a
-  guard."* `m7-failures` then merged this fix back into itself (`main` into `m7-failures`, commit `48d5053`)
-  before its own PR (#14) finished.
+- **Found in connection with M7's build, shipped as its own PR because the fix lived outside M7's own freeze
+  boundary (PR #15, `fix-guard-vacuity`, merged *before* `m7-failures` itself — see the timeline note above
+  for exactly what evidence this document can and cannot stand behind for *why*):** chasing the Case 8
+  overclaim above found a real hole in a guard added one milestone earlier, at M6 — PR #12's
+  `tier-rank-agreement.test.ts`. Its two original assertions were both implications ("if the domain says X,
+  then `lib/contradiction` says Y"), which a domain table reporting `false` for every input would satisfy
+  vacuously. The fix touches `domains/personal-assistant/__tests__/tier-rank-agreement.test.ts` — confirmed
+  just now with `gh pr diff 15 --name-only`, which lists that one file only — a path `gh pr diff 14
+  --name-only` confirms `m7-failures` (scoped to `.genesis/decisions/0006-failure-suite.md` and
+  `tests/failures/**`) never touches. It shipped as a separate PR straight against `main`, adding two positive
+  assertions plus a direct falsifiability check (inverting the domain's own answer and confirming the guard
+  then fails). PR #15's own line: *"A guard that cannot fail is not a guard."*
 - **Revised inside its own PR, visible as a comment rather than a rewritten body (M8, PR #13) — the one real
   exception to "verification lives in the next PR," and worth reading for what it actually records, not just
   that it exists.** On 2026-09-21T23:47:47Z, nine minutes before PR #13 merged, the same account posted a
@@ -174,14 +198,16 @@ this document does not attempt to infer one from indirect signals (commit timing
 
 ## What this document did and did not have a primary source for
 
-`gh pr view N --json comments` was checked for all 17 PRs, not a sample. Sixteen of the seventeen carry
-exactly one comment each, and every one of those sixteen is the Vercel deployment bot's own automated status
-comment. **The exception is PR #13, which carries a second, substantive, non-bot comment from the same
-account** — quoted and used above, in "What was rejected, and what was merely revised." An earlier revision
-of this document claimed the comment list was empty everywhere "Vercel's bot aside," which was true for 16 of
-17 PRs and false for the one that actually mattered: PR #13 is discussed at length elsewhere in this document,
-and that discussion did not originally surface the one piece of real review evidence sitting on that exact
-PR. Corrected here, and incorporated where it belongs, not only disclosed as a gap.
+`gh pr view N --json comments` was run and counted, for all 17 PRs, not inferred from a pattern. The real
+split: **PRs #1–#3 carry zero comments** (three PRs); **#4–#12 and #14–#17 carry exactly one comment each, and
+every one of those thirteen is the Vercel deployment bot's own automated status comment** (thirteen PRs); **PR
+#13 alone carries two comments** — the same Vercel bot comment every other PR gets, plus a second, substantive,
+non-bot comment from the same account (`vladimir-mawla`), quoted and used above in "What was rejected, and
+what was merely revised." An earlier revision of this document claimed "sixteen of the seventeen carry exactly
+one comment each," which was arithmetic backed into from "not #13" rather than a real count — three PRs (not
+sixteen) carry zero comments, and the sixteen that carry at least one are not one uniform bucket, since #13
+carries two. Corrected here to the actually-counted split, and the one substantive comment remains
+incorporated where it belongs rather than only disclosed as a gap.
 
 What remains genuinely true, checked the same way: `gh pr view N --json reviews` returns zero formal GitHub
 review objects (approvals, requested-changes, or review-level comments) for all 17 PRs. So the record this

@@ -54,29 +54,67 @@ import { join } from "node:path";
  * the same string" without real parsing — so rather than special-case
  * this one known false positive (which would only hide the NEXT
  * unrelated `switch` that reuses either literal), the `case` leg is
- * dropped entirely below. What remains is narrower but sound: a direct
- * `.status === "literal"` comparison. Zero occurrences of that
+ * dropped entirely below. What remains is narrower but sound: a
+ * `status === "literal"` comparison. Zero occurrences of that
  * (`"believed"`/`"disputed"`) exist anywhere in this scan.
+ *
+ * A SECOND GAP, FOUND BY INDEPENDENT VERIFICATION AFTER THIS FILE WAS
+ * FIRST APPROVED, DISCLOSED HERE RATHER THAN LEFT IMPLICIT IN "reflection
+ * / renamed re-export" BELOW: the original regex required a literal `.`
+ * immediately before `status` (`\.status\s*===...`), so a DESTRUCTURED
+ * read — `const { status } = candidates[0]; if (status === "believed")`
+ * — walked straight through, unflagged. This is not an exotic bypass; it
+ * is ordinary, everyday TypeScript, arguably MORE idiomatic than a
+ * repeated `.status` property chain. An absence claim whose own disclosed
+ * limits list only "reflection" and "a renamed re-export" while missing
+ * the single most common way to read a field in this language would be
+ * understating the gap, not merely leaving one open — the same failure
+ * this account has been corrected for before in the other direction
+ * (overstating a caveat). CLOSED, not merely disclosed, because closing
+ * it turned out to be cheap and did not reintroduce the `switch`/`case`
+ * false positive above (that false positive was about a `case` LABEL
+ * matching a string irrespective of what it switches on; this fix is
+ * about the LEFT-HAND SIDE of a direct comparison, an unrelated axis):
+ * the pattern below now matches `status` as a bare word-boundary token,
+ * not only when preceded by a literal `.` — so both `object.status ===
+ * "believed"` and a destructured bare `status === "believed"` are caught
+ * by the same rule, while `myStatus`/`DecayStatus`-shaped identifiers
+ * (which do not end in a word-boundary immediately before "status", or
+ * are wrong case) are not. Checked directly against every real
+ * non-comparison use of the word `status` already in this codebase's
+ * scanned roots (object-literal CONSTRUCTION — `{ status: "believed" }`
+ * — and a renaming destructure that discards the value — `const {
+ * status: _status, ...core } = memory` — appear in `lib/store/forget.ts`,
+ * `domains/personal-assistant/store.ts`, and `lib/store/belief-query.ts`
+ * itself): none of these are direct `status === "literal"` COMPARISONS,
+ * so none of them are flagged by the broadened pattern either — the
+ * "does NOT overtighten" block below proves this, not just asserts it.
  *
  * WHAT THIS PROVES AND DOES NOT, STATED PRECISELY: this PROVES that no
  * non-test source file under the five scanned roots TEXTUALLY contains a
- * direct comparison of `.status` against `"believed"` or `"disputed"`
- * (the two live-only labels — `"doubted"` is deliberately excluded from
- * the regex, since `DecayResult.status` legitimately shares that ONE
- * literal with `Memory.status`, and a textual match on `"doubted"` alone
- * cannot tell the two apart; `believed`/`disputed` are unambiguous
- * because `DecayResult.status` never uses them). It does NOT prove no
- * `switch` anywhere branches on `Memory.status` (the false positive above
- * is exactly why that leg was removed rather than patched — a `switch`
+ * direct comparison — via a property access OR a destructured local — of
+ * a value named `status` against `"believed"` or `"disputed"` (the two
+ * live-only labels — `"doubted"` is deliberately excluded from the
+ * regex, since `DecayResult.status` legitimately shares that ONE literal
+ * with `Memory.status`, and a textual match on `"doubted"` alone cannot
+ * tell the two apart; `believed`/`disputed` are unambiguous because
+ * `DecayResult.status` never uses them). It does NOT prove no `switch`
+ * anywhere branches on `Memory.status` (the false positive above is
+ * exactly why that leg was removed rather than patched — a `switch`
  * check would need to verify WHICH type's field is being switched on,
- * which this file does not attempt), and it does NOT prove no engine
- * could ever be written to branch on `Memory.status` some other way —
- * reflection, a renamed re-export, or a dynamically assembled string
- * would all be invisible to this textual check, the same disclosed class
- * of gap this codebase's own `lib/store/__tests__/architecture.test.ts`
- * names for its own scans (before that file's later AST-based rewrite,
- * which this one does not attempt to replicate at that same cost for a
- * single, narrow absence claim).
+ * which this file does not attempt). It STILL does not prove no engine
+ * could ever be written to branch on `Memory.status` some other way:
+ * reflection (`obj["status"]` via a computed/concatenated string),
+ * a renamed re-export chased through a second indirection layer, or a
+ * comparison against a variable holding the string `"believed"` rather
+ * than the literal itself, would all be invisible to this textual check
+ * — the same disclosed class of gap this codebase's own `lib/store/
+ * __tests__/architecture.test.ts` names for its own scans (before that
+ * file's later AST-based rewrite, which this one does not attempt to
+ * replicate at that same cost for a single, narrow absence claim). Stated
+ * at full strength, not softened: destructuring was the ordinary case
+ * this list should have named from the start, and reflection/renaming/
+ * indirection remain genuinely exotic by comparison.
  */
 
 const REPO_ROOT = join(import.meta.dirname, "..", "..");
@@ -103,8 +141,8 @@ function listNonTestSourceFiles(dir: string): string[] {
   return files;
 }
 
-/** Matches a direct `.status === "believed"`/`"disputed"` comparison (either quote style, `==` or `===`) — the two unambiguous live-Memory-only status labels. See file header for why `"doubted"` is excluded, and why a `switch`/`case` leg was tried and removed after a real false positive. */
-const OFFENDING_PATTERN = /\.status\s*={2,3}\s*["'](believed|disputed)["']/g;
+/** Matches a direct `status === "believed"`/`"disputed"` comparison (either quote style, `==` or `===`), whether `status` is reached via a property access (`.status`) or a bare, destructured local — the two unambiguous live-Memory-only status labels. `\bstatus\b` (not `\.status`) is what closes the destructuring gap; see file header for why `"doubted"` is excluded, why a `switch`/`case` leg was tried and removed after a real false positive, and why broadening the left-hand side does not reintroduce it. */
+const OFFENDING_PATTERN = /\bstatus\s*={2,3}\s*["'](believed|disputed)["']/g;
 
 interface Offender {
   readonly file: string;
@@ -152,6 +190,14 @@ describe("Case 10 — HONEST PARTIAL PIN: no non-test source under lib/contracts
     expect(OFFENDING_PATTERN.test('switch (check.outcome) {\n  case "disputed":\n  case "not-comparable":')).toBe(false);
   });
 
+  it("REGRESSION for the gap independent verification found after first approval: a destructured, bare `status` compared to \"believed\" -- the exact shape injected during review -- is now caught", () => {
+    OFFENDING_PATTERN.lastIndex = 0;
+    const source = 'const { status } = candidates[0];\nif (status === "believed") { return true; }';
+    expect(OFFENDING_PATTERN.test(source)).toBe(true);
+    OFFENDING_PATTERN.lastIndex = 0;
+    expect(OFFENDING_PATTERN.test('const { status } = memory;\nif (status === "disputed") { flag(); }')).toBe(true);
+  });
+
   it("does NOT overtighten: the real, legitimate DecayResult.status/tombstoned-discriminant reads in this codebase are NOT flagged -- confirms the regex is scoped to \"believed\"/\"disputed\" only, not every use of the word \"status\"", () => {
     OFFENDING_PATTERN.lastIndex = 0;
     expect(OFFENDING_PATTERN.test('if (record.status === "tombstoned") { return ZERO_CONFIDENCE; }')).toBe(false);
@@ -159,6 +205,15 @@ describe("Case 10 — HONEST PARTIAL PIN: no non-test source under lib/contracts
     expect(OFFENDING_PATTERN.test('if (result.status === "forgettable") { ... }')).toBe(false);
     OFFENDING_PATTERN.lastIndex = 0;
     expect(OFFENDING_PATTERN.test('if (result.status === "doubted") { ... }')).toBe(false); // the one literal DecayResult and Memory legitimately share -- deliberately excluded, see file header.
+  });
+
+  it("does NOT overtighten, against the broadened word-boundary pattern specifically: an object-literal CONSTRUCTION (`{ status: \"believed\" }`, no comparison at all) and a renaming destructure that discards the value (`const { status: _status, ...core } = memory` -- forget.ts's and store.ts's own real shape) are NOT flagged, and a similarly-named identifier that merely CONTAINS \"status\" is NOT flagged either", () => {
+    OFFENDING_PATTERN.lastIndex = 0;
+    expect(OFFENDING_PATTERN.test('return { status: "believed", memory, confidence };')).toBe(false); // construction, not a `===` comparison.
+    OFFENDING_PATTERN.lastIndex = 0;
+    expect(OFFENDING_PATTERN.test('const { status: _status, ...core } = memory;')).toBe(false); // renamed on the way out, never compared.
+    OFFENDING_PATTERN.lastIndex = 0;
+    expect(OFFENDING_PATTERN.test('if (mystatus === "believed") { ... }')).toBe(false); // "status" here is a SUFFIX of a longer lowercase identifier with no word boundary before it, not its own bare token.
   });
 
   it("sanity: the scan actually walked real files (a non-empty, real file list, not an accidentally-empty glob)", () => {
